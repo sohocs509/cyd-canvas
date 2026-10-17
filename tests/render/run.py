@@ -140,23 +140,27 @@ def alert_test(c: Canvas):
 
 def slideshow_test(c: Canvas):
     print("Slideshow")
-    ids = ["test/ss/a", "test/ss/b"]
+    ids = ["test/ss/a", "test/ss/b", "test/ss/c"]
     for i in ids:
-        c.put_screen(tiny(i, i[-1].upper(), dwell=2))
+        c.put_screen(tiny(i, i[-1].upper(), dwell=3))
     st, _ = raw(c, "PUT", "/api/screens/test/ss/bad", json.dumps(tiny("test/ss/bad", dwell=500)).encode())
     check("dwell out of range -> 400", st == 400, str(st))
     c.menu()
     c.slideshow(True, idle=3, dwell=3, prefix="test/ss/")
     check("config shows slideshow on", c.config()["slideshow"]["enabled"] is True)
-    seen, running = set(), False
+    seen, running, first = [], False, None
     t0 = time.time()
-    while time.time() - t0 < 16:
+    while time.time() - t0 < 24:                      # 3 s idle + 3 cards x 3 s, twice around
         s = c.status()
-        seen.add(s["current"])
-        running = running or s["slideshow"] == "running"
-        time.sleep(0.6)
-    check("slideshow ran", running)
-    check("it showed every eligible card", set(ids) <= seen, str(sorted(seen)))
+        if s["slideshow"] == "running":
+            running = True
+            first = first if first is not None else time.time() - t0
+        if s["current"] and (not seen or seen[-1] != s["current"]):
+            seen.append(s["current"])
+        time.sleep(0.3)
+    check("slideshow started after the idle time", running and first is not None and 2.5 <= first <= 8, str(first))
+    check("it showed every eligible card", set(ids) <= set(seen), str(seen))
+    check("it keeps cycling (a card repeats)", len(seen) > len(set(seen)), str(seen))
     c.slideshow(False)
     c.menu()
     time.sleep(1.5)
