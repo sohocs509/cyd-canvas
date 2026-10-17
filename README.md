@@ -36,6 +36,12 @@ light sensor, touch events), so automations can drive it with plain `mqtt.publis
 | `examples/` | Sample screens |
 | `boards/` | Partition tables and per-board notes |
 
+## Power
+
+Use a proper **5 V / 1 A (or better) wall adapter** with a short cable. A weak USB port, an unpowered hub or a
+thin cable makes the Wi-Fi radio stop passing packets under load (the board stays associated but goes deaf).
+Powering from a PC port is fine for flashing; use an adapter for running.
+
 ## Verified hardware map (ESP32-2432S028R)
 
 | Function | GPIO |

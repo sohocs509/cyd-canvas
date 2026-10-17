@@ -48,6 +48,8 @@ class Writer {
   size_t written_ = 0;
 };
 
+int64_t mtime(const String& path);   // FAT last-write time as epoch seconds (0 = unknown)
+uint64_t freeBytes();
 uint64_t totalBytes();
 uint64_t usedBytes();
 }

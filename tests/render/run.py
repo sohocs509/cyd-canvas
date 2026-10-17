@@ -138,6 +138,58 @@ def alert_test(c: Canvas):
     check("ack of unknown card -> 404", st == 404, str(st))
 
 
+def slideshow_test(c: Canvas):
+    print("Slideshow")
+    ids = ["test/ss/a", "test/ss/b"]
+    for i in ids:
+        c.put_screen(tiny(i, i[-1].upper(), dwell=2))
+    st, _ = raw(c, "PUT", "/api/screens/test/ss/bad", json.dumps(tiny("test/ss/bad", dwell=500)).encode())
+    check("dwell out of range -> 400", st == 400, str(st))
+    c.menu()
+    c.slideshow(True, idle=3, dwell=3, prefix="test/ss/")
+    check("config shows slideshow on", c.config()["slideshow"]["enabled"] is True)
+    seen, running = set(), False
+    t0 = time.time()
+    while time.time() - t0 < 16:
+        s = c.status()
+        seen.add(s["current"])
+        running = running or s["slideshow"] == "running"
+        time.sleep(0.6)
+    check("slideshow ran", running)
+    check("it showed every eligible card", set(ids) <= seen, str(sorted(seen)))
+    c.slideshow(False)
+    c.menu()
+    time.sleep(1.5)
+    now = {c.status()["current"]}
+    time.sleep(7)
+    check("stays put once switched off", now == {c.status()["current"]} == {""}, str(now))
+    for i in ids:
+        c.delete_screen(i)
+
+
+def maintenance_test(c: Canvas):
+    print("Housekeeping: lowest priority, oldest first")
+    # Only low/high/critical test cards are used so the device's own (normal) cards can never be chosen.
+    base = len(c.screens())
+    ev0 = c.status()["evicted"]
+    c.limits(max_cards=base + 2)
+    order = [("test/mt/a", "low"), ("test/mt/b", "low"), ("test/mt/c", "high"), ("test/mt/d", "low"), ("test/mt/e", "critical")]
+    for cid, prio in order:
+        c.put_screen(tiny(cid, cid[-1], priority=prio))
+        time.sleep(3.2)
+    left = {e["id"] for e in c.index() if e["id"].startswith("test/mt/")}
+    check("lowest priority and oldest were deleted", left == {"test/mt/c", "test/mt/e"}, str(sorted(left)))
+    check("high card kept over low ones", "test/mt/c" in left)
+    check("unacknowledged critical card kept", "test/mt/e" in left)
+    check("eviction counter moved by 3", c.status()["evicted"] - ev0 == 3, str(c.status()["evicted"] - ev0))
+    check("device's own cards untouched", all(x in c.screens() for x in ("host-health", "services")) or base == 0)
+    c.ack("test/mt/e")
+    c.limits(max_cards=48)
+    for cid in ("test/mt/c", "test/mt/e"):
+        try: c.delete_screen(cid)
+        except CanvasError: pass
+
+
 def expiry_test(c: Canvas, man):
     print("Expiry (slow)")
     if not c.status().get("time_valid"):
@@ -208,6 +260,8 @@ def main():
 
     id_checks(c)
     alert_test(c)
+    slideshow_test(c)
+    maintenance_test(c)
     import tempfile
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)

@@ -23,8 +23,13 @@ struct Cfg {
   int mqPort = 1883;
   bool mqTls = false;
   int brightness = 100;
+  int maxCards = 48, minFreeMb = 32;
+  bool ssOn = false;
+  int ssIdle = 30, ssDwell = 8;
+  String ssPrefix;
 };
 static Cfg cfg;
+static void saveSlideshow();
 static String certPem, keyPem, certFp, certPin;
 static volatile uint32_t discoveryAfter = 0;
 static volatile bool ntpChanged = false, wifiChanged = false, mqttChanged = false, discoveryDirty = true;
@@ -58,6 +63,12 @@ static void loadCfg() {
   cfg.haPrefix = nvsGet(p, "ha_pfx", "homeassistant");
   cfg.brightness = p.getInt("bright", 100);
   cfg.ntp = nvsGet(p, "ntp", "pool.ntp.org");
+  cfg.maxCards = p.getInt("lim_cards", 48);
+  cfg.minFreeMb = p.getInt("lim_free", 32);
+  cfg.ssOn = p.getBool("ss_on", false);
+  cfg.ssIdle = p.getInt("ss_idle", 30);
+  cfg.ssDwell = p.getInt("ss_dwell", 8);
+  cfg.ssPrefix = nvsGet(p, "ss_pfx");
   certPem = nvsGet(p, "tls_crt");
   keyPem = nvsGet(p, "tls_key");
   certPin = nvsGet(p, "tls_pin");
@@ -219,9 +230,14 @@ static String statusJson() {
   d["screens"] = ui::screenCount();
   d["current"] = ui::current();
   d["brightness"] = cfg.brightness;
+  d["slideshow"] = cfg.ssOn ? "ON" : "OFF";
   d["ldr"] = hal::ldrRaw();
   d["mqtt"] = cfg.mqHost.isEmpty() ? "off" : "configured";
   d["alerts"] = ui::alertCount();
+  d["evicted"] = ui::evictedTotal();
+  d["sd_free_mb"] = (uint32_t)(store::freeBytes() >> 20);
+  d["cards_max"] = cfg.maxCards;
+  d["slideshow"] = ui::slideshowRunning() ? "running" : (cfg.ssOn ? "armed" : "off");
   d["time_valid"] = ui::clockValid();
   if (ui::clockValid()) {
     time_t t = time(nullptr);
@@ -242,6 +258,8 @@ static esp_err_t putScreen(httpd_req_t* r, const String& id) {
   if (doc["schema"].as<int>() != 1) return err(r, 400, "schema must be 1");
   if (String(doc["id"] | "") != id) return err(r, 400, "id in body must match URL");
   if (!doc["widgets"].is<JsonArray>()) return err(r, 400, "widgets must be an array");
+  if (!doc["dwell"].isNull() && (!doc["dwell"].is<int>() || (int)doc["dwell"] < 2 || (int)doc["dwell"] > 120))
+    return err(r, 400, "dwell must be an integer from 2 to 120 seconds");
   if (!doc["priority"].isNull()) {
     String p = doc["priority"] | "";
     if (p != "low" && p != "normal" && p != "high" && p != "critical") return err(r, 400, "priority must be low, normal, high or critical");
@@ -294,6 +312,23 @@ static esp_err_t putConfig(httpd_req_t* r) {
     p.putString("ntp", cfg.ntp);
     ntpChanged = true;
   }
+  if (d["slideshow"].is<JsonObject>()) {
+    JsonObjectConst w = d["slideshow"];
+    if (w["enabled"].is<bool>()) cfg.ssOn = w["enabled"];
+    if (w["idle"].is<int>()) cfg.ssIdle = constrain((int)w["idle"], 3, 3600);
+    if (w["dwell"].is<int>()) cfg.ssDwell = constrain((int)w["dwell"], 2, 600);
+    if (w["prefix"].is<const char*>() && strlen(w["prefix"]) <= 32) cfg.ssPrefix = w["prefix"].as<String>();
+    saveSlideshow();
+    ui::setSlideshow(cfg.ssOn, cfg.ssIdle, cfg.ssDwell, cfg.ssPrefix);
+  }
+  if (d["limits"].is<JsonObject>()) {
+    JsonObjectConst l = d["limits"];
+    if (l["max_cards"].is<int>()) cfg.maxCards = constrain((int)l["max_cards"], 4, 200);
+    if (l["min_free_mb"].is<int>()) cfg.minFreeMb = constrain((int)l["min_free_mb"], 1, 4096);
+    p.putInt("lim_cards", cfg.maxCards);
+    p.putInt("lim_free", cfg.minFreeMb);
+    ui::setLimits(cfg.maxCards, cfg.minFreeMb);
+  }
   JsonObjectConst m = d["mqtt"];
   if (!m.isNull()) {
     if (m["host"].is<const char*>()) { cfg.mqHost = m["host"].as<String>(); p.putString("mq_host", cfg.mqHost); }
@@ -314,6 +349,12 @@ static String configJson() {
   JsonDocument d;
   d["name"] = cfg.name;
   d["ntp"] = cfg.ntp;
+  d["limits"]["max_cards"] = cfg.maxCards;
+  d["limits"]["min_free_mb"] = cfg.minFreeMb;
+  d["slideshow"]["enabled"] = cfg.ssOn;
+  d["slideshow"]["idle"] = cfg.ssIdle;
+  d["slideshow"]["dwell"] = cfg.ssDwell;
+  d["slideshow"]["prefix"] = cfg.ssPrefix;
   d["mqtt"]["host"] = cfg.mqHost;
   d["mqtt"]["port"] = cfg.mqPort;
   d["mqtt"]["user"] = cfg.mqUser;
@@ -517,6 +558,19 @@ static void publishDiscovery() {
   device(br);
   put("number", "brightness", br);
 
+  JsonDocument sw;
+  sw["name"] = "Slideshow";
+  sw["unique_id"] = uid + "_slideshow";
+  sw["command_topic"] = pfx() + "/cmd";
+  sw["payload_on"] = "slideshow on";
+  sw["payload_off"] = "slideshow off";
+  sw["state_topic"] = pfx() + "/state";
+  sw["value_template"] = "{{ value_json.slideshow }}";
+  sw["state_on"] = "ON";
+  sw["state_off"] = "OFF";
+  device(sw);
+  put("switch", "slideshow", sw);
+
   JsonDocument ldr;
   ldr["name"] = "Light level";
   ldr["unique_id"] = uid + "_ldr";
@@ -556,6 +610,8 @@ static void onMqtt(char* topic, uint8_t* payload, unsigned int len) {
     if (body == "menu") ui::showMenu();
     else if (body.startsWith("show ")) ui::show(body.substring(5));
     else if (body.startsWith("brightness ")) net::setBrightness(body.substring(11).toInt());
+    else if (body == "slideshow on") net::setSlideshow(true);
+    else if (body == "slideshow off") net::setSlideshow(false);
   } else if (t.startsWith(p + "/data/")) {
     String id = t.substring(p.length() + 6);
     JsonDocument d;
@@ -704,6 +760,22 @@ static void netTask(void*) {
   }
 }
 
+static void saveSlideshow() {
+  Preferences p;
+  p.begin("cyd", false);
+  p.putBool("ss_on", cfg.ssOn);
+  p.putInt("ss_idle", cfg.ssIdle);
+  p.putInt("ss_dwell", cfg.ssDwell);
+  p.putString("ss_pfx", cfg.ssPrefix);
+  p.end();
+}
+
+void net::setSlideshow(bool on) {
+  cfg.ssOn = on;
+  saveSlideshow();
+  ui::setSlideshow(cfg.ssOn, cfg.ssIdle, cfg.ssDwell, cfg.ssPrefix);
+}
+
 void net::begin() {
   WiFi.mode(WIFI_STA);  // MAC is valid after this
   WiFi.onEvent([](WiFiEvent_t ev, WiFiEventInfo_t info) {
@@ -713,6 +785,8 @@ void net::begin() {
     else if (ev == ARDUINO_EVENT_WIFI_STA_LOST_IP) Serial.println("wifi: LOST ip");
   });
   loadCfg();
+  ui::setSlideshow(cfg.ssOn, cfg.ssIdle, cfg.ssDwell, cfg.ssPrefix);
+  ui::setLimits(cfg.maxCards, cfg.minFreeMb);
   hal::backlight(cfg.brightness);
   xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 0);
 }

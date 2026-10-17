@@ -17,7 +17,7 @@ Machine-readable definition: [`schema/screen.schema.json`](../schema/screen.sche
 |---|---|
 | Resolution | **320 × 240**, landscape, origin top-left, pixels |
 | Touch | resistive; tap a menu entry to open, **✕ (top-right, 44×34)** or **long-press** or **BOOT button** to go back |
-| Reserved area | keep the top-right 44×34 px clear — the ✕ button floats over it |
+| Reserved areas | keep the top-right 44×34 px clear (the ✕ back button floats there). Unacknowledged **critical** cards also get a red ACKNOWLEDGE button over the bottom-right 150×40 px |
 | Colours | `"#rrggbb"` hex strings only |
 | Fonts | sizes `12`, `16`, `24`, `32` (Montserrat); default 16 |
 
@@ -42,6 +42,7 @@ Machine-readable definition: [`schema/screen.schema.json`](../schema/screen.sche
 | `title` | no | menu text, ≤ 32 chars; defaults to the last segment of the id |
 | `menu` | no | group heading in the menu (≤ 24 chars); defaults to the id's parent path (`hosts/milo`), so path ids group themselves |
 | `priority` | no | `low` / `normal` (default) / `high` / `critical`, see below |
+| `dwell` | no | seconds (2-120) the card stays up in the slideshow; default is the slideshow setting |
 | `expires` | no | UTC time after which the device **deletes** the card, `2026-10-20T18:00:00Z`. No `expires` = keep forever |
 | `data` | no | readings stored with the card, same shape as a data message (section 2) |
 | `bg` | no | background colour, default black |
@@ -59,11 +60,29 @@ File size limit: **16 KB**.
 | `high` | **Alerts** group at the top, amber | none |
 | `critical` | **Alerts** group at the top, red with a warning icon | **takes over the display** the moment it is uploaded, forces the backlight to 100 %, blinks the red LED |
 
-A critical card stays on screen until it is **acknowledged**: tap its ✕ (or press BOOT, or long-press),
+A critical card stays on screen until it is **acknowledged**: tap the red **ACKNOWLEDGE** button on the card (or the ✕, BOOT, or a long-press),
 or `POST /api/ack/<id>` (`cyd-canvas ack [id]`) from a host. A remote `show`/`menu` request cannot
 dismiss it. If several are unacknowledged, the newest shows first and the rest follow as each is
 acknowledged. Re-uploading a card (same id) raises the alert again; deleting or expiring it clears it.
 After a reboot unacknowledged critical cards show again. Live data updates do not re-raise an alert.
+
+### Slideshow
+
+When enabled the display waits for `idle` seconds without a touch, then cycles through the cards in menu
+order, `dwell` seconds each (a card's own `dwell` wins). `low` cards are skipped; `high` and `critical`
+cards get twice the screen time. Any touch ends it and returns to the menu. Critical alerts still
+interrupt it. Settings: `PUT /api/config {"slideshow":{"enabled":true,"idle":30,"dwell":8,"prefix":"hosts/"}}`
+(`prefix` limits it to ids starting with it), `cyd-canvas slideshow on --idle 30 --dwell 8`, the menu
+entry on the device, or the Home Assistant switch.
+
+### Housekeeping (the device cleans up after itself)
+
+The card is small and the menu has to stay usable, so the device deletes cards when it has **more than
+`max_cards` (default 48)** or **less than `min_free_mb` (default 32 MB)** of free SD space. It deletes
+**lowest priority first, then least recently used** (last upload, live data or viewing). It never deletes an
+unacknowledged critical card, the card on screen, or the card just uploaded. It also removes data snapshots
+of deleted cards and images no card uses (after 10 minutes). Check `evicted` in `GET /api/status`; change the
+limits with `cyd-canvas limits --max-cards 60`. Give cards you want to keep a higher `priority`.
 
 ### Identity, overwrite and expiry
 

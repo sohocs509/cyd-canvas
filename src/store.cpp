@@ -167,5 +167,15 @@ void store::Writer::abort() {
   open_ = false;
 }
 
+int64_t store::mtime(const String& path) {
+  Guard g;
+  if (!mounted) return 0;
+  File f = SD.open(path, FILE_READ);
+  if (!f) return 0;
+  time_t t = f.getLastWrite();
+  f.close();
+  return t > 1700000000 ? (int64_t)t : 0;   // 1980 means "written before the clock was set"
+}
+uint64_t store::freeBytes() { Guard g; return mounted ? SD.totalBytes() - SD.usedBytes() : 0; }
 uint64_t store::totalBytes() { Guard g; return mounted ? SD.totalBytes() : 0; }
 uint64_t store::usedBytes() { Guard g; return mounted ? SD.usedBytes() : 0; }

@@ -12,6 +12,7 @@
     "expires": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", "description": "UTC time after which the device deletes the card (needs a synced clock)." },
     "data": { "type": "object", "description": "Initial readings, same shape as a data message; arrays of numbers seed chart history." },
     "title": { "type": "string", "maxLength": 32 },
+    "dwell": { "type": "integer", "minimum": 2, "maximum": 120, "description": "Seconds this card stays up during the slideshow (default: the slideshow setting)." },
     "priority": { "enum": ["low", "normal", "high", "critical"], "default": "normal", "description": "high and critical cards are listed first under Alerts. A critical card takes over the display (and blinks the LED) until acknowledged." },
     "menu": { "type": "string", "maxLength": 24, "description": "Menu group this screen appears under." },
     "bg": { "$ref": "#/$defs/color" },

@@ -27,5 +27,22 @@ String indexJson();
 // (tap X / BOOT on the device, or POST /api/ack). High and critical cards are listed first, under "Alerts".
 void cardUpdated(const String& id);   // a card was (re)uploaded: clears its acknowledgement
 bool ack(const String& id);           // empty id = acknowledge everything
-int alertCount();                     // unacknowledged critical cards                             // [{id,title,menu,expires}]  // what the device holds for a screen
+int alertCount();
+
+// Slideshow: after `idle` seconds without touch the display cycles through the cards (prefix filter,
+// low-priority cards skipped, high/critical shown twice per round). Any touch stops it. A card's own
+// "dwell" overrides `dwell`. Critical cards still interrupt.
+void setSlideshow(bool on, int idleSec, int dwellSec, const String& prefix);
+bool slideshowOn();
+bool slideshowRunning();
+
+// Housekeeping. When there are more than maxCards cards or less than minFreeMb of free SD space, cards are
+// deleted: lowest priority first, then least recently used (upload, live data or viewing). Never deleted:
+// unacknowledged critical cards, the card on screen, the card uploaded last. Also removes data snapshots of
+// deleted cards and images no card uses (after 10 minutes).
+void setLimits(int maxCards, int minFreeMb);
+int limitMaxCards();
+int limitMinFreeMb();
+uint32_t evictedTotal();
+void maintainSoon();                     // unacknowledged critical cards                             // [{id,title,menu,expires}]  // what the device holds for a screen
 }

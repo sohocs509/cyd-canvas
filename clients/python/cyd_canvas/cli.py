@@ -79,6 +79,11 @@ def main(argv=None) -> int:
     s.add_argument("--mqtt-user"); s.add_argument("--mqtt-password")
 
     s = sub.add_parser("ack", help="acknowledge critical cards (all if no id)"); s.add_argument("id", nargs="?", default="")
+    s = sub.add_parser("slideshow", help="cycle cards when idle")
+    s.add_argument("state", choices=["on", "off"]); s.add_argument("--idle", type=int, help="seconds without touch before it starts")
+    s.add_argument("--dwell", type=int, help="seconds per card"); s.add_argument("--prefix", help="only ids starting with this")
+    s = sub.add_parser("limits", help="housekeeping limits (auto-delete lowest priority, oldest first)")
+    s.add_argument("--max-cards", type=int); s.add_argument("--min-free-mb", type=int)
     s = sub.add_parser("show"); s.add_argument("id")
     sub.add_parser("menu")
     s = sub.add_parser("brightness"); s.add_argument("percent", type=int)
@@ -133,6 +138,8 @@ def main(argv=None) -> int:
             else:
                 res = c.data(a.id, vals)
         elif a.cmd == "ack": res = c.ack(a.id)
+        elif a.cmd == "slideshow": res = c.slideshow(a.state == "on", a.idle, a.dwell, a.prefix)
+        elif a.cmd == "limits": res = c.limits(a.max_cards, a.min_free_mb)
         elif a.cmd == "show": res = c.show(a.id)
         elif a.cmd == "menu": res = c.menu()
         elif a.cmd == "brightness": res = c.brightness(a.percent)

@@ -14,6 +14,7 @@ String statusLine();
 bool setWifi(const String& ssid, const String& pass);
 void setBrightness(int percent);
 int brightness();
+void setSlideshow(bool on);   // persists; keeps idle/dwell/prefix
 void screensChanged();        // republish Home Assistant discovery
 bool probe(IPAddress server = IPAddress((uint32_t)0));  // round trip to the router's DNS
 void resetCredentials();

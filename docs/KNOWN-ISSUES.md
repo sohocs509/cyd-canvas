@@ -1,6 +1,6 @@
 # Known issues
 
-## Wi-Fi stops passing packets under sustained load (open)
+## Wi-Fi stops passing packets under sustained load: power supply (workaround found)
 
 Seen on the first test unit (ESP32-2432S028R, USB-powered from a mini-PC port). After roughly one to
 three minutes of continuous back-to-back requests the device stays associated with the access point
@@ -18,7 +18,12 @@ What has been ruled out or fixed on the way:
 | One shared write handle let an autosave truncate an upload | per-writer file handle |
 | Stalled uploads blocked the single server task forever | bounded body reads |
 
-Not yet resolved: the radio/TCP-IP wedge itself. Suspects, in order: USB power quality (Wi-Fi TX
+**Result so far:** the first test unit wedged within 1-3 minutes of load while powered from a mini-PC USB
+port. On a wall charger the same load ran without a single failure (first soak, see the project README for
+the latest figures). Treat a weak USB port, hub or long thin cable as the cause until shown otherwise: **power
+the board from a good 5 V / 1 A or better adapter.** The text below is kept for the record.
+
+Previously unresolved: the radio/TCP-IP wedge itself. Suspects, in order: USB power quality (Wi-Fi TX
 bursts plus backlight on a weak port or cable), then Wi-Fi driver buffer exhaustion. A self-check
 (`net::probe`) detects a dead link and reconnects/restarts, but it has not yet been seen to recover
 the unit. **To help:** run `python tests/render/run.py --slow` and report the board, power source and

@@ -20,6 +20,8 @@ usage: cyd-canvas [-p profile] <command> [args]
   asset-put FILE.bin [NAME] | asset-rm NAME
   data ID key=value ...  numbers/booleans sent as-is, anything else as a string
   data ID -j '{"json":1}'
+  slideshow on|off [IDLE_S [DWELL_S [PREFIX]]]
+  limits MAX_CARDS [MIN_FREE_MB]   auto-delete lowest priority, oldest first beyond these
   ack [ID]               acknowledge critical cards (all if no ID)
   show ID | brightness 0-100
   mqtt-config HOST [PORT] [USER PASSWORD]
@@ -111,6 +113,12 @@ case "$cmd" in
             api PUT "/api/assets/$name" -H 'Content-Type: application/octet-stream' --data-binary "@$f" ;;
   asset-rm) api DELETE "/api/assets/${1:?name}" ;;
   ack)      api POST "/api/ack${1:+/$1}" ;;
+  slideshow) st="${1:?on|off}"; body="{\"slideshow\":{\"enabled\":$([ "$st" = on ] && echo true || echo false)"
+            [ -n "${2:-}" ] && body="$body,\"idle\":$2"; [ -n "${3:-}" ] && body="$body,\"dwell\":$3"
+            [ -n "${4:-}" ] && body="$body,\"prefix\":\"$4\""
+            api PUT /api/config -H 'Content-Type: application/json' -d "$body}}" ;;
+  limits)   body="{\"limits\":{\"max_cards\":${1:?max cards}"; [ -n "${2:-}" ] && body="$body,\"min_free_mb\":$2"
+            api PUT /api/config -H 'Content-Type: application/json' -d "$body}}" ;;
   show)     api POST "/api/show/${1:?id}" ;;
   brightness) api POST /api/brightness -H 'Content-Type: application/json' -d "{\"value\":${1:?0-100}}" ;;
   data)     id="${1:?id}"; shift

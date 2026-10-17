@@ -20,7 +20,7 @@ struct LvGuard {
   ~LvGuard() { g_lvHolder = "-"; xSemaphoreGiveRecursive(lvLock); }
 };
 
-struct Meta { uint8_t prio = 1; String id, title, menu, expiresStr; std::vector<String> chartKeys; int64_t expires = 0; };
+struct Meta { std::vector<String> assets; int64_t mtime = 0; uint8_t dwell = 0; uint8_t prio = 1; String id, title, menu, expiresStr; std::vector<String> chartKeys; int64_t expires = 0; };
 static std::vector<Meta> metas;
 
 struct ScreenData {
@@ -52,6 +52,25 @@ static std::map<String, std::vector<std::pair<double, lv_color_t>>> thresholds;
 enum MergeMode { MERGE, REPLACE, SEED };
 static bool mergeData(const String& id, JsonObjectConst d, MergeMode mode);
 
+struct SlideCfg { bool on = false; int idle = 30, dwell = 8; String prefix; };
+static SlideCfg ss;
+static uint32_t lastInput = 0, ssNextAt = 0;
+static bool ssActive = false;
+static size_t ssCursor = 0;
+static void slideshowTick();
+static void maintain();
+struct Limits { int maxCards = 48, minFreeMb = 32; };
+static Limits lim;
+static std::map<String, int64_t> usedAt;      // last use as epoch seconds (0 while the clock is unset)
+static std::map<String, uint32_t> useSeq;     // tie-break and no-clock ordering
+static uint32_t useCounter = 0, evicted = 0;
+static String lastUploaded;
+static bool maintainFlag = false;
+static uint32_t maintainAt = 0;
+static void markUsed(const String& id) {
+  useSeq[id] = ++useCounter;
+  usedAt[id] = ui::clockValid() ? (int64_t)time(nullptr) : 0;
+}
 static void sweepExpired();
 static void checkAlerts();
 static String curId;          // "" = menu
@@ -85,6 +104,8 @@ static void flushCb(lv_display_t* d, const lv_area_t* a, uint8_t* px) {
 static void touchCb(lv_indev_t*, lv_indev_data_t* d) {
   int16_t x, y;
   if (hal::touch(x, y)) {
+    lastInput = millis();
+    if (ssActive) { ssActive = false; pendingNav = "\x01"; navPending = true; }   // a tap ends the slideshow
     d->point.x = x;
     d->point.y = y;
     d->state = LV_INDEV_STATE_PRESSED;
@@ -289,6 +310,7 @@ static void geom(lv_obj_t* o, JsonObjectConst w, int defW, int defH) {
 }
 
 static lv_obj_t* backBtn = nullptr;
+static lv_obj_t* ackBtn = nullptr;
 static std::set<String> acked;
 static std::map<String, uint32_t> critSeq;
 static uint32_t seqCounter = 0;
@@ -419,6 +441,10 @@ static bool infoReveal = false;
 static lv_obj_t* infoLbl = nullptr;
 static void refreshInfo() { if (infoLbl) lv_label_set_text(infoLbl, net::infoText(infoReveal).c_str()); }
 static void onReveal(lv_event_t*) { infoReveal = !infoReveal; refreshInfo(); }
+static void onSlideToggle(lv_event_t*) {
+  net::setSlideshow(!ss.on);   // persists and updates the UI config
+  ui::refreshIndex();          // rebuild the menu with the new label
+}
 static void onInfoItem(lv_event_t*) { pendingNav = "\x02"; navPending = true; }
 
 static lv_obj_t* buildInfo() {
@@ -455,7 +481,7 @@ static String groupOf(const Meta& m) { return m.prio >= 2 ? String(" Alerts") : 
 static void rebuildIndexLocked() {
   metas.clear();
   JsonDocument filter;
-  filter["id"] = true; filter["title"] = true; filter["menu"] = true; filter["expires"] = true; filter["priority"] = true;
+  filter["id"] = true; filter["title"] = true; filter["menu"] = true; filter["expires"] = true; filter["priority"] = true; filter["dwell"] = true; filter["widgets"][0]["src"] = true;
   filter["widgets"][0]["type"] = true;
   filter["widgets"][0]["series"][0]["key"] = true;
   for (const String& id : store::listScreenIds()) {
@@ -471,6 +497,10 @@ static void rebuildIndexLocked() {
       String p = doc["priority"] | "normal";
       m.prio = p == "low" ? 0 : p == "high" ? 2 : p == "critical" ? 3 : 1;
     }
+    m.mtime = store::mtime(store::screenPath(id));
+    for (JsonObject w : doc["widgets"].as<JsonArray>())
+      if (w["src"].is<const char*>()) m.assets.push_back(String(w["src"].as<const char*>()));
+    m.dwell = (uint8_t)constrain((int)(doc["dwell"] | 0), 0, 120);
     m.expiresStr = doc["expires"] | "";
     if (!m.expiresStr.isEmpty() && !ui::parseUtc(m.expiresStr.c_str(), m.expires)) m.expires = 0;
     for (JsonObject w : doc["widgets"].as<JsonArray>())
@@ -522,6 +552,8 @@ static lv_obj_t* buildMenu() {
     lv_obj_add_event_cb(btn, onMenuItem, LV_EVENT_CLICKED, (void*)i);
   }
   lv_list_add_text(list, "System");
+  lv_obj_t* sb = lv_list_add_button(list, LV_SYMBOL_PLAY, ss.on ? "Slideshow: on (tap to stop)" : "Slideshow: off (tap to start)");
+  lv_obj_add_event_cb(sb, onSlideToggle, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* ib = lv_list_add_button(list, LV_SYMBOL_SETTINGS, "Device info");
   lv_obj_add_event_cb(ib, onInfoItem, LV_EVENT_CLICKED, nullptr);
   statusLbl = lv_label_create(scr);
@@ -553,8 +585,13 @@ static void navigate(const String& target) {
     loadData(target);
     if (doc["data"].is<JsonObject>()) mergeData(target, doc["data"].as<JsonObjectConst>(), SEED);
     curId = target;
+    markUsed(target);
     curScr = buildScreen(target, doc);
     updateAll();
+  }
+  if (ackBtn) {
+    if (!curId.isEmpty() && isCritical(curId) && !acked.count(curId)) lv_obj_remove_flag(ackBtn, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(ackBtn, LV_OBJ_FLAG_HIDDEN);
   }
   if (backBtn) {
     if (curId.isEmpty()) lv_obj_add_flag(backBtn, LV_OBJ_FLAG_HIDDEN);
@@ -586,6 +623,32 @@ void ui::begin() {
   lv_indev_set_type(in, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(in, touchCb);
 
+  // Floating back button on the top layer, shown on every screen except the menu.
+  backBtn = lv_button_create(lv_layer_top());
+  lv_obj_set_size(backBtn, 44, 34);
+  lv_obj_align(backBtn, LV_ALIGN_TOP_RIGHT, 0, 0);
+  lv_obj_set_style_bg_color(backBtn, lv_color_black(), 0);
+  lv_obj_set_style_bg_opa(backBtn, 160, 0);
+  lv_obj_set_style_radius(backBtn, 6, 0);
+  lv_obj_set_style_shadow_width(backBtn, 0, 0);
+  lv_obj_t* bl = lv_label_create(backBtn);
+  lv_label_set_text(bl, LV_SYMBOL_CLOSE);
+  lv_obj_center(bl);
+  lv_obj_add_event_cb(backBtn, onLongPress, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_flag(backBtn, LV_OBJ_FLAG_HIDDEN);
+
+  // Explicit ACKNOWLEDGE button, shown only on unacknowledged critical cards (bottom-right).
+  ackBtn = lv_button_create(lv_layer_top());
+  lv_obj_set_size(ackBtn, 150, 40);
+  lv_obj_align(ackBtn, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
+  lv_obj_set_style_bg_color(ackBtn, lv_color_hex(0xb32424), 0);
+  lv_obj_set_style_radius(ackBtn, 8, 0);
+  lv_obj_t* al = lv_label_create(ackBtn);
+  lv_label_set_text(al, LV_SYMBOL_OK "  ACKNOWLEDGE");
+  lv_obj_center(al);
+  lv_obj_add_event_cb(ackBtn, onLongPress, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_flag(ackBtn, LV_OBJ_FLAG_HIDDEN);
+
   LvGuard g;
   navigate("\x01");
 }
@@ -593,6 +656,8 @@ void ui::begin() {
 void ui::loop() {
   static bool lastBoot = false;
   bool b = hal::bootPressed();
+  if (b) lastInput = millis();
+  if (ssActive && b && !lastBoot) ssActive = false;
   if (b && !lastBoot && !curId.isEmpty()) { LvGuard gg; goBack(); }
   lastBoot = b;
 
@@ -606,13 +671,16 @@ void ui::loop() {
     if (curId.isEmpty()) navigate("\x01");
   }
   checkAlerts();
+  slideshowTick();
   static uint32_t lastInfo = 0;
   if (curId == "\x02" && millis() - lastInfo > 2000) { lastInfo = millis(); refreshInfo(); }
   static uint32_t lastSweep = 0;
   if (millis() - lastSweep > 20000 || (lastSweep == 0 && ui::clockValid())) {
     lastSweep = millis() ? millis() : 1;
     sweepExpired();
+    maintain();
   }
+  if (maintainFlag && (int32_t)(millis() - maintainAt) >= 0) { maintainFlag = false; maintain(); }
   if (millis() - lastPersist > 60000) {
     lastPersist = millis();
     for (auto& kv : data)
@@ -704,6 +772,7 @@ static bool mergeData(const String& id, JsonObjectConst d, MergeMode mode) {
     }
   }
   sd.dirty = true;
+  markUsed(id);
   if (curId == id) updateAll();
   return true;
 }
@@ -776,6 +845,9 @@ static void checkAlerts() {
 
 void ui::cardUpdated(const String& id) {
   LvGuard g;
+  markUsed(id);
+  lastUploaded = id;
+  ui::maintainSoon();
   acked.erase(id);
   critSeq[id] = ++seqCounter;
 }
@@ -798,4 +870,105 @@ int ui::alertCount() {
   int n = 0;
   for (const Meta& m : metas) if (m.prio == 3 && !acked.count(m.id)) n++;
   return n;
+}
+
+// ---------- slideshow ----------
+void ui::setSlideshow(bool on, int idleSec, int dwellSec, const String& prefix) {
+  LvGuard g;
+  ss.on = on;
+  ss.idle = constrain(idleSec, 3, 3600);
+  ss.dwell = constrain(dwellSec, 2, 600);
+  ss.prefix = prefix;
+  if (!on) ssActive = false;
+  lastInput = millis();
+}
+bool ui::slideshowOn() { return ss.on; }
+bool ui::slideshowRunning() { return ssActive; }
+
+static void slideshowTick() {
+  if (!ss.on || alertActive || navPending || indexDirty) return;
+  uint32_t now = millis();
+  if (!ssActive) {
+    if (now - lastInput < (uint32_t)ss.idle * 1000UL) return;
+    ssActive = true;
+    ssNextAt = 0;
+  }
+  if ((int32_t)(now - ssNextAt) < 0) return;
+  std::vector<const Meta*> eligible;
+  for (const Meta& m : metas) {
+    if (m.prio == 0 || (!ss.prefix.isEmpty() && !m.id.startsWith(ss.prefix))) continue;
+    eligible.push_back(&m);
+    if (m.prio >= 2) eligible.push_back(&m);     // high/critical get twice the screen time
+  }
+  if (eligible.empty()) { ssActive = false; lastInput = now; return; }
+  ssCursor = (ssCursor + 1) % eligible.size();
+  const Meta* pick = eligible[ssCursor];
+  pendingNav = pick->id;
+  navPending = true;
+  ssNextAt = now + (uint32_t)(pick->dwell ? pick->dwell : ss.dwell) * 1000UL;
+}
+
+// ---------- housekeeping ----------
+void ui::setLimits(int maxCards, int minFreeMb) {
+  LvGuard g;
+  lim.maxCards = constrain(maxCards, 4, 200);
+  lim.minFreeMb = constrain(minFreeMb, 1, 4096);
+  maintainSoon();
+}
+int ui::limitMaxCards() { return lim.maxCards; }
+int ui::limitMinFreeMb() { return lim.minFreeMb; }
+uint32_t ui::evictedTotal() { return evicted; }
+void ui::maintainSoon() { maintainFlag = true; maintainAt = millis() + 1500; }
+
+static void maintain() {
+  if (!store::ready()) return;
+  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+  bool changed = false;
+
+  // 1. keep within the card-count and free-space limits
+  for (int guard = 0; guard < 64; guard++) {
+    uint64_t freeMb = store::freeBytes() >> 20;
+    bool over = (int)metas.size() > lim.maxCards || (int)freeMb < lim.minFreeMb;
+    if (!over) break;
+    const Meta* victim = nullptr;
+    for (const Meta& m : metas) {
+      if (m.id == curId || m.id == lastUploaded) continue;              // on screen / just uploaded
+      if (m.prio == 3 && !acked.count(m.id)) continue;                  // unacknowledged critical
+      if (!victim) { victim = &m; continue; }
+      if (m.prio != victim->prio) { if (m.prio < victim->prio) victim = &m; continue; }
+      int64_t a = std::max(m.mtime, usedAt.count(m.id) ? usedAt[m.id] : 0);
+      int64_t b = std::max(victim->mtime, usedAt.count(victim->id) ? usedAt[victim->id] : 0);
+      if (a != b) { if (a < b) victim = &m; continue; }
+      if (useSeq[m.id] < useSeq[victim->id]) victim = &m;
+    }
+    if (!victim) break;
+    String id = victim->id;
+    Serial.printf("maintain: evicting %s (prio %d) cards=%u free=%lluMB\n", id.c_str(), victim->prio, (unsigned)metas.size(), (unsigned long long)freeMb);
+    store::removeFile(store::screenPath(id));
+    store::removeFile(store::dataPath(id));
+    data.erase(id); acked.erase(id); critSeq.erase(id); usedAt.erase(id); useSeq.erase(id);
+    evicted++;
+    rebuildIndexLocked();
+    changed = true;
+  }
+
+  // 2. orphans: data snapshots with no card, images no card uses (grace period for upload order)
+  std::set<String> ids, used;
+  for (const Meta& m : metas) { ids.insert(m.id); for (const String& a : m.assets) used.insert(a); }
+  for (const String& name : store::listNames("/data", ".json")) {
+    String id = name; id.replace('~', '/');
+    if (!ids.count(id)) { store::removeFile("/data/" + name + ".json"); Serial.printf("maintain: removed orphan data %s\n", id.c_str()); }
+  }
+  if (ui::clockValid()) {
+    int64_t now = time(nullptr);
+    for (const String& name : store::listNames("/assets", ".bin")) {
+      String file = name + ".bin";
+      int64_t age = now - store::mtime("/assets/" + file);
+      if (!used.count(file) && age > 600 && store::mtime("/assets/" + file) > 0) {
+        store::removeFile("/assets/" + file);
+        Serial.printf("maintain: removed unused image %s\n", file.c_str());
+      }
+    }
+  }
+  if (changed) { indexDirty = true; net::screensChanged(); }
 }

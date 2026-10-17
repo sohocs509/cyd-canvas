@@ -215,6 +215,25 @@ class Canvas:
     def put_asset(self, name: str, data: bytes) -> dict:
         return self._call("PUT", f"/api/assets/{name}", data)
 
+    def set_config(self, **fields) -> dict:
+        return self._call("PUT", "/api/config", fields)
+
+    def slideshow(self, enabled: bool, idle: Optional[int] = None, dwell: Optional[int] = None,
+                  prefix: Optional[str] = None) -> dict:
+        """Start/stop the idle slideshow. idle/dwell in seconds; prefix limits it to ids starting with it."""
+        w = {"enabled": bool(enabled)}
+        if idle is not None: w["idle"] = idle
+        if dwell is not None: w["dwell"] = dwell
+        if prefix is not None: w["prefix"] = prefix
+        return self.set_config(slideshow=w)
+
+    def limits(self, max_cards: Optional[int] = None, min_free_mb: Optional[int] = None) -> dict:
+        """Housekeeping limits: beyond them the device deletes the lowest-priority, least-recently-used cards."""
+        l = {}
+        if max_cards is not None: l["max_cards"] = max_cards
+        if min_free_mb is not None: l["min_free_mb"] = min_free_mb
+        return self.set_config(limits=l)
+
     def ack(self, sid: str = "") -> dict:
         """Acknowledge a critical card (empty = all), releasing the display and the blinking LED."""
         return self._call("POST", f"/api/ack/{sid}" if sid else "/api/ack", b"")
