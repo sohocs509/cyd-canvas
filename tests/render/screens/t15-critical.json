@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "id": "test/t15-critical",
+  "title": "T15 CRITICAL",
+  "menu": "Render tests",
+  "priority": "critical",
+  "bg": "#3a0000",
+  "widgets": [
+    {
+      "type": "label",
+      "x": 8,
+      "y": 8,
+      "text": "DISK FULL on milo",
+      "font": 24,
+      "color": "#ffffff"
+    },
+    {
+      "type": "value",
+      "x": 8,
+      "y": 60,
+      "key": "free",
+      "fmt": "%.0f",
+      "unit": " MB free",
+      "font": 32,
+      "color": "#ff4d4d"
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 130,
+      "text": "Tap X to acknowledge",
+      "font": 16
+    }
+  ],
+  "data": {
+    "free": 12
+  }
+}

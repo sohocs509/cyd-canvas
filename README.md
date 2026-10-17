@@ -7,7 +7,10 @@ you can change them over the network without reflashing.
 Target hardware: **ESP32-2432S028R** ("Cheap Yellow Display", 2.8" ILI9341 320x240,
 XPT2046 touch, microSD). Other boards are welcome as build profiles.
 
-> Status: **pre-alpha**. The hardware pin map is verified; firmware is in progress.
+> Status: **pre-alpha**. Rendering, storage, the HTTPS/MQTT API, clients and the test suite work on real
+> hardware. **Known issue:** under sustained load (minutes of back-to-back requests) the Wi-Fi link of
+> the first test unit sometimes stops moving packets while still associated; see
+> [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md).
 
 ## How it works
 

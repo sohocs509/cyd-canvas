@@ -20,6 +20,7 @@ usage: cyd-canvas [-p profile] <command> [args]
   asset-put FILE.bin [NAME] | asset-rm NAME
   data ID key=value ...  numbers/booleans sent as-is, anything else as a string
   data ID -j '{"json":1}'
+  ack [ID]               acknowledge critical cards (all if no ID)
   show ID | brightness 0-100
   mqtt-config HOST [PORT] [USER PASSWORD]
 Images must already be LVGL .bin files (use the Python client to convert PNG/JPEG).
@@ -109,6 +110,7 @@ case "$cmd" in
   asset-put) f="${1:?file.bin}"; name="${2:-$(basename "$f")}"
             api PUT "/api/assets/$name" -H 'Content-Type: application/octet-stream' --data-binary "@$f" ;;
   asset-rm) api DELETE "/api/assets/${1:?name}" ;;
+  ack)      api POST "/api/ack${1:+/$1}" ;;
   show)     api POST "/api/show/${1:?id}" ;;
   brightness) api POST /api/brightness -H 'Content-Type: application/json' -d "{\"value\":${1:?0-100}}" ;;
   data)     id="${1:?id}"; shift

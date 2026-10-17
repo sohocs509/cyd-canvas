@@ -25,6 +25,8 @@ python tests/render/run.py --cleanup          # remove the test screens afterwar
 | t11 | 64 widgets |
 | t12 | every widget before any data |
 | t13 | the always-on ✕ button over screen content |
+| t14 | expiry (`--slow`) |
+| t15 | critical priority: takes over the display, ack, re-raise (automatic checks in `run.py`) |
 
 `manifest.json` holds each step's data and a plain-language expectation. `invalid/` holds
 screens the device must reject (HTTP 400). Add a case by adding a screen, a manifest entry,

@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "net.h"
 #include "config.h"
+#include "dbg.h"
 #include "hal.h"
 #include "store.h"
 #include "tls.h"
+#include "tlsmem.h"
 #include "ui.h"
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <WiFiUdp.h>
 #include <esp_https_server.h>
 
 // ---------- configuration (NVS) ----------
@@ -23,6 +26,7 @@ struct Cfg {
 };
 static Cfg cfg;
 static String certPem, keyPem, certFp, certPin;
+static volatile uint32_t discoveryAfter = 0;
 static volatile bool ntpChanged = false, wifiChanged = false, mqttChanged = false, discoveryDirty = true;
 
 static String nvsGet(Preferences& p, const char* k, const String& def = "") { return p.isKey(k) ? p.getString(k) : def; }
@@ -130,8 +134,6 @@ String net::infoText(bool reveal) {
 }
 
 // ---------- HTTPS API ----------
-static httpd_handle_t httpd = nullptr;
-
 static const char* statusText(int c) {
   switch (c) {
     case 200: return "200 OK";
@@ -139,12 +141,17 @@ static const char* statusText(int c) {
     case 400: return "400 Bad Request";
     case 401: return "401 Unauthorized";
     case 404: return "404 Not Found";
+    case 408: return "408 Request Timeout";
     case 413: return "413 Payload Too Large";
     case 503: return "503 Service Unavailable";
     default: return "500 Internal Server Error";
   }
 }
 
+static httpd_handle_t httpd = nullptr;
+
+// Keep-alive is allowed (a handshake costs ~2 s). The server never forces a close, so TIME_WAIT lands on
+// the host and not on this device's 16 socket slots; a new client replaces an idle one (LRU purge).
 static esp_err_t reply(httpd_req_t* r, int code, const String& body) {
   httpd_resp_set_status(r, statusText(code));
   httpd_resp_set_type(r, "application/json");
@@ -174,10 +181,12 @@ static bool readBody(httpd_req_t* r, String& out, size_t max) {
   out.reserve(r->content_len);
   char buf[512];
   size_t left = r->content_len;
+  int stalls = 0;
   while (left) {
     int g = httpd_req_recv(r, buf, min(left, sizeof(buf)));
-    if (g == HTTPD_SOCK_ERR_TIMEOUT) continue;
+    if (g == HTTPD_SOCK_ERR_TIMEOUT) { if (++stalls > 2) return false; continue; }
     if (g <= 0) return false;
+    stalls = 0;
     out.concat(buf, g);
     left -= g;
   }
@@ -202,6 +211,8 @@ static String statusJson() {
   d["version"] = CYD_VERSION;
   d["uptime_s"] = millis() / 1000;
   d["heap_free"] = ESP.getFreeHeap();
+  d["heap_largest"] = ESP.getMaxAllocHeap();
+  d["tls_pool_free"] = tlsmem::freeBytes();
   d["rssi"] = WiFi.RSSI();
   d["sd_total_mb"] = (uint32_t)(store::totalBytes() >> 20);
   d["sd_used_mb"] = (uint32_t)(store::usedBytes() >> 20);
@@ -210,6 +221,7 @@ static String statusJson() {
   d["brightness"] = cfg.brightness;
   d["ldr"] = hal::ldrRaw();
   d["mqtt"] = cfg.mqHost.isEmpty() ? "off" : "configured";
+  d["alerts"] = ui::alertCount();
   d["time_valid"] = ui::clockValid();
   if (ui::clockValid()) {
     time_t t = time(nullptr);
@@ -230,6 +242,10 @@ static esp_err_t putScreen(httpd_req_t* r, const String& id) {
   if (doc["schema"].as<int>() != 1) return err(r, 400, "schema must be 1");
   if (String(doc["id"] | "") != id) return err(r, 400, "id in body must match URL");
   if (!doc["widgets"].is<JsonArray>()) return err(r, 400, "widgets must be an array");
+  if (!doc["priority"].isNull()) {
+    String p = doc["priority"] | "";
+    if (p != "low" && p != "normal" && p != "high" && p != "critical") return err(r, 400, "priority must be low, normal, high or critical");
+  }
   if (!doc["expires"].isNull()) {
     int64_t exp;
     if (!doc["expires"].is<const char*>() || !ui::parseUtc(doc["expires"], exp))
@@ -239,6 +255,7 @@ static esp_err_t putScreen(httpd_req_t* r, const String& id) {
   if (!store::writeFileAtomic(store::screenPath(id), (const uint8_t*)body.c_str(), body.length()))
     return err(r, 500, "SD write failed");
   ui::refreshIndex();
+  ui::cardUpdated(id);
   if (doc["data"].is<JsonObject>()) ui::replaceData(id, doc["data"].as<JsonObjectConst>());
   net::screensChanged();
   return reply(r, 201, "{\"ok\":true}");
@@ -251,10 +268,12 @@ static esp_err_t putAsset(httpd_req_t* r, const String& name) {
   uint8_t buf[1024];
   size_t left = r->content_len;
   bool first = true;
+  int stalls = 0;
   while (left) {
     int g = httpd_req_recv(r, (char*)buf, min(left, sizeof(buf)));
-    if (g == HTTPD_SOCK_ERR_TIMEOUT) continue;
+    if (g == HTTPD_SOCK_ERR_TIMEOUT) { if (++stalls > 2) return err(r, 408, "upload stalled"); continue; }
     if (g <= 0) return err(r, 400, "upload interrupted");
+    stalls = 0;
     if (first && buf[0] != 0x19) return err(r, 400, "not an LVGL binary image (convert with cyd-canvas)");
     first = false;
     if (!w.write(buf, g)) return err(r, 500, "SD write failed");
@@ -308,7 +327,15 @@ static String configJson() {
   return s;
 }
 
+char g_route[72] = "";
+volatile uint32_t g_routeSince = 0;
+struct RouteTrack {
+  RouteTrack(httpd_req_t* r) { snprintf(g_route, sizeof(g_route), "%d %s", (int)r->method, r->uri); g_routeSince = millis(); }
+  ~RouteTrack() { g_route[0] = 0; }
+};
+
 static esp_err_t api(httpd_req_t* r) {
+  RouteTrack track(r);
   if (!authOk(r)) return err(r, 401, "missing or wrong X-Api-Key");
   String path = r->uri;
   int q = path.indexOf('?');
@@ -376,6 +403,10 @@ static esp_err_t api(httpd_req_t* r) {
   }
 
   if (a == "show" && m == HTTP_POST) return ui::show(id) ? reply(r, 200, "{\"ok\":true}") : err(r, 404, "no such screen");
+  if (a == "ack" && m == HTTP_POST) {
+    if (!id.isEmpty() && !store::validId(id)) return err(r, 400, "invalid screen id");
+    return ui::ack(id) ? reply(r, 200, "{\"ok\":true}") : err(r, 404, "no unacknowledged critical card");
+  }
   if (a == "menu" && m == HTTP_POST) { ui::showMenu(); return reply(r, 200, "{\"ok\":true}"); }
   if (a == "brightness" && m == HTTP_POST) {
     String body;
@@ -390,10 +421,12 @@ static esp_err_t api(httpd_req_t* r) {
 static void startHttps() {
   if (httpd || certPem.isEmpty()) return;
   httpd_ssl_config_t c = HTTPD_SSL_CONFIG_DEFAULT();
-  c.httpd.stack_size = 10240;
-  c.httpd.max_open_sockets = 2;
+  c.httpd.stack_size = 8192;
+  c.httpd.max_open_sockets = 1;   // each TLS session pins ~44 KB; two at once starve the Wi-Fi driver
   c.httpd.max_uri_handlers = 6;
   c.httpd.lru_purge_enable = true;
+  c.httpd.recv_wait_timeout = 5;
+  c.httpd.send_wait_timeout = 5;
   c.httpd.uri_match_fn = httpd_uri_match_wildcard;
   c.cacert_pem = (const uint8_t*)certPem.c_str();
   c.cacert_len = certPem.length() + 1;
@@ -558,11 +591,31 @@ static void mqttService() {
     Serial.println("net: mqtt connected");
   }
   mqtt.loop();
-  if (discoveryDirty) publishDiscovery();
+  if (discoveryDirty && (int32_t)(millis() - discoveryAfter) >= 0) publishDiscovery();
   if (ui::current() != lastScreen || millis() - lastState > 30000) publishState();
 }
 
-void net::screensChanged() { discoveryDirty = true; }
+// A real network round trip, never answered from a cache: a DNS query for a name that cannot exist.
+// Any reply (even NXDOMAIN) proves the TCP/IP stack and the radio are both moving packets.
+bool net::probe(IPAddress server) {
+  if (server == IPAddress((uint32_t)0)) server = WiFi.gatewayIP();
+  WiFiUDP udp;
+  static const uint8_t q[] = {0x4c, 0x59, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                              5, 'p', 'r', 'o', 'b', 'e', 7, 'i', 'n', 'v', 'a', 'l', 'i', 'd', 0, 0x00, 0x01, 0x00, 0x01};
+  if (!udp.begin(0)) return false;
+  udp.beginPacket(server, 53);
+  udp.write(q, sizeof(q));
+  udp.endPacket();
+  uint32_t t = millis();
+  while (millis() - t < 2000) {
+    if (udp.parsePacket() > 0) { udp.stop(); return true; }
+    delay(20);
+  }
+  udp.stop();
+  return false;
+}
+
+void net::screensChanged() { discoveryDirty = true; discoveryAfter = millis() + 4000; }
 
 // ---------- task ----------
 static void netTask(void*) {
@@ -574,6 +627,8 @@ static void netTask(void*) {
     if (!cfg.ssid.isEmpty() && !wifiStarted) {
       WiFi.mode(WIFI_STA);
       WiFi.setHostname(cfg.name.c_str());
+      WiFi.setSleep(false);
+      WiFi.setTxPower(WIFI_POWER_11dBm);   // the AP is metres away; full power only adds USB current peaks
       WiFi.begin(cfg.ssid.c_str(), cfg.pass.c_str());
       wifiStarted = true;
       lastTry = millis();
@@ -593,6 +648,56 @@ static void netTask(void*) {
     }
     wasUp = up;
     if (ntpChanged && up) { ntpChanged = false; configTime(0, 0, cfg.ntp.c_str(), "pool.ntp.org"); }
+    {
+      static int lowCount = 0;
+      if (up && ESP.getMaxAllocHeap() < 36000) {
+        if (++lowCount > 3000) { Serial.println("net: heap too fragmented for TLS, restarting"); delay(100); ESP.restart(); }
+      } else {
+        lowCount = 0;
+      }
+    }
+    {
+      // diagnostics: report whenever the largest free block drops under what a TLS handshake needs
+      static uint32_t lastLog = 0;
+      size_t big = ESP.getMaxAllocHeap();
+      if (big < 36000 && millis() - lastLog > 500) {
+        lastLog = millis();
+        Serial.printf("heap: LOW largest=%u free=%u minfree=%u\n", (unsigned)big, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
+      }
+    }
+    {
+      static uint32_t lastStuck = 0;
+      if (g_route[0] && millis() - g_routeSince > 8000 && millis() - lastStuck > 2000) {
+        lastStuck = millis();
+        Serial.printf("STUCK handler '%s' for %us  sd-holder=%s lv-holder=%s free=%u\n", g_route,
+                      (unsigned)((millis() - g_routeSince) / 1000), (const char*)g_sdHolder, (const char*)g_lvHolder,
+                      (unsigned)ESP.getFreeHeap());
+      }
+    }
+    {
+      // Self-check: Wi-Fi can stay associated while no packet moves (seen as send buffers full, EAGAIN).
+      // Three failed round trips: reconnect. Six: restart; the display is unattended and state is on the SD card.
+      static uint32_t lastProbe = 0;
+      static int probeFails = 0;
+      if (up && millis() - lastProbe > 15000) {
+        lastProbe = millis();
+        if (net::probe()) {
+          probeFails = 0;
+        } else {
+          probeFails++;
+          Serial.printf("net: probe failed (%d)\n", probeFails);
+          if (probeFails == 3) {
+            Serial.println("net: reconnecting Wi-Fi");
+            WiFi.disconnect();
+            wifiStarted = false;
+          } else if (probeFails >= 6) {
+            Serial.println("net: network still dead, restarting");
+            delay(100);
+            ESP.restart();
+          }
+        }
+      }
+    }
     ui::setStatusLine(net::statusLine());
     mqttService();
     vTaskDelay(pdMS_TO_TICKS(up ? 20 : 500));
@@ -601,7 +706,13 @@ static void netTask(void*) {
 
 void net::begin() {
   WiFi.mode(WIFI_STA);  // MAC is valid after this
+  WiFi.onEvent([](WiFiEvent_t ev, WiFiEventInfo_t info) {
+    if (ev == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) Serial.printf("wifi: disconnected reason=%d\n", info.wifi_sta_disconnected.reason);
+    else if (ev == ARDUINO_EVENT_WIFI_STA_CONNECTED) Serial.println("wifi: associated");
+    else if (ev == ARDUINO_EVENT_WIFI_STA_GOT_IP) Serial.println("wifi: got ip");
+    else if (ev == ARDUINO_EVENT_WIFI_STA_LOST_IP) Serial.println("wifi: LOST ip");
+  });
   loadCfg();
   hal::backlight(cfg.brightness);
-  xTaskCreatePinnedToCore(netTask, "net", 20480, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 0);
 }

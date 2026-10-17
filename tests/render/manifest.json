@@ -280,6 +280,15 @@
           "expect": "Card shows for about a minute, then the device returns to the menu and the card is gone (needs --slow)."
         }
       ]
+    },
+    {
+      "id": "test/t15-critical",
+      "skip_auto": true,
+      "steps": [
+        {
+          "expect": "(automatic test, see run.py) the card jumps onto the screen by itself, LED blinks red, backlight forced to full; ack returns to the menu."
+        }
+      ]
     }
   ],
   "invalid": [

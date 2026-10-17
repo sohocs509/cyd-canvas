@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "store.h"
+#include "dbg.h"
 #include "config.h"
 #include <SD.h>
 #include <SPI.h>
@@ -7,10 +8,10 @@
 static SPIClass sdSpi(VSPI);
 static SemaphoreHandle_t lockH;
 static bool mounted = false;
-static File wfile;  // only one streaming writer at a time
 
-store::Guard::Guard() { xSemaphoreTakeRecursive(lockH, portMAX_DELAY); }
-store::Guard::~Guard() { xSemaphoreGiveRecursive(lockH); }
+volatile const char* g_sdHolder = "-";
+store::Guard::Guard() { xSemaphoreTakeRecursive(lockH, portMAX_DELAY); g_sdHolder = pcTaskGetName(nullptr); }
+store::Guard::~Guard() { g_sdHolder = "-"; xSemaphoreGiveRecursive(lockH); }
 
 bool store::ready() { return mounted; }
 
@@ -18,7 +19,8 @@ bool store::begin() {
   if (!lockH) lockH = xSemaphoreCreateRecursiveMutex();
   Guard g;
   sdSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
-  mounted = SD.begin(PIN_SD_CS, sdSpi, 20000000) || SD.begin(PIN_SD_CS, sdSpi, 4000000);
+  // 4 MHz: the CYD's SD wiring drops reads at 20 MHz (cards vanished from the index). Our files are tiny.
+  mounted = SD.begin(PIN_SD_CS, sdSpi, 4000000);
   if (!mounted) return false;
   for (const char* d : {"/screens", "/assets", "/data"})
     if (!SD.exists(d)) SD.mkdir(d);
@@ -60,15 +62,37 @@ bool store::validAssetName(const String& n) {
   return n[0] != '.';
 }
 
+// A read that fails once is retried: a transient SD error must not make a card disappear.
+static File openRead(const String& path) {
+  for (int i = 0; i < 4; i++) {
+    File f = SD.open(path, FILE_READ);
+    if (f) return f;
+    delay(5 * (i + 1));
+  }
+  return File();
+}
+
 bool store::exists(const String& path) {
   Guard g;
   return mounted && SD.exists(path);
 }
 
+bool store::readJson(const String& path, JsonDocument& doc, JsonDocument* filter, size_t maxLen) {
+  Guard g;
+  if (!mounted) return false;
+  File f = openRead(path);
+  if (!f || f.isDirectory()) return false;
+  if (f.size() > maxLen) { f.close(); return false; }
+  DeserializationError e = filter ? deserializeJson(doc, f, DeserializationOption::Filter(*filter)) : deserializeJson(doc, f);
+  f.close();
+  if (e) Serial.printf("store: %s: %s\n", path.c_str(), e.c_str());
+  return !e;
+}
+
 bool store::readFile(const String& path, String& out, size_t maxLen) {
   Guard g;
   if (!mounted) return false;
-  File f = SD.open(path, FILE_READ);
+  File f = openRead(path);
   if (!f || f.isDirectory()) return false;
   if (f.size() > maxLen) { f.close(); return false; }
   out = "";
@@ -110,8 +134,8 @@ bool store::Writer::open(const String& finalPath) {
   fin_ = finalPath;
   tmp_ = finalPath + ".tmp";
   SD.remove(tmp_);
-  wfile = SD.open(tmp_, FILE_WRITE);
-  if (!wfile) return false;
+  f_ = SD.open(tmp_, FILE_WRITE);
+  if (!f_) return false;
   open_ = true;
   written_ = 0;
   return true;
@@ -120,7 +144,7 @@ bool store::Writer::open(const String& finalPath) {
 bool store::Writer::write(const uint8_t* data, size_t len) {
   Guard g;
   if (!open_) return false;
-  if (wfile.write(data, len) != len) return false;
+  if (f_.write(data, len) != len) return false;
   written_ += len;
   return true;
 }
@@ -128,7 +152,7 @@ bool store::Writer::write(const uint8_t* data, size_t len) {
 bool store::Writer::commit() {
   Guard g;
   if (!open_) return false;
-  wfile.close();
+  f_.close();
   open_ = false;
   SD.remove(fin_);
   if (!SD.rename(tmp_, fin_)) { SD.remove(tmp_); return false; }
@@ -138,7 +162,7 @@ bool store::Writer::commit() {
 void store::Writer::abort() {
   Guard g;
   if (!open_) return;
-  wfile.close();
+  f_.close();
   SD.remove(tmp_);
   open_ = false;
 }

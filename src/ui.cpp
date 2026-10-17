@@ -2,6 +2,7 @@
 #include "ui.h"
 #include "config.h"
 #include "hal.h"
+#include "dbg.h"
 #include "net.h"
 #include "store.h"
 #include <lvgl.h>
@@ -9,15 +10,17 @@
 #include <algorithm>
 #include <deque>
 #include <map>
+#include <set>
 
 // ---------- state ----------
 static SemaphoreHandle_t lvLock;
+volatile const char* g_lvHolder = "-";
 struct LvGuard {
-  LvGuard() { xSemaphoreTakeRecursive(lvLock, portMAX_DELAY); }
-  ~LvGuard() { xSemaphoreGiveRecursive(lvLock); }
+  LvGuard() { xSemaphoreTakeRecursive(lvLock, portMAX_DELAY); g_lvHolder = pcTaskGetName(nullptr); }
+  ~LvGuard() { g_lvHolder = "-"; xSemaphoreGiveRecursive(lvLock); }
 };
 
-struct Meta { String id, title, menu, expiresStr; std::vector<String> chartKeys; int64_t expires = 0; };
+struct Meta { uint8_t prio = 1; String id, title, menu, expiresStr; std::vector<String> chartKeys; int64_t expires = 0; };
 static std::vector<Meta> metas;
 
 struct ScreenData {
@@ -50,6 +53,7 @@ enum MergeMode { MERGE, REPLACE, SEED };
 static bool mergeData(const String& id, JsonObjectConst d, MergeMode mode);
 
 static void sweepExpired();
+static void checkAlerts();
 static String curId;          // "" = menu
 static lv_obj_t* curScr = nullptr;
 static lv_obj_t* statusLbl = nullptr;
@@ -59,7 +63,7 @@ static bool navPending = false;
 static bool indexDirty = true;
 static uint32_t lastPersist = 0;
 static lv_display_t* disp;
-static uint16_t dispBuf[SCREEN_W * 24];
+static uint16_t dispBuf[SCREEN_W * 8];   // small render strip: RAM is scarcer than flush calls
 
 // ---------- LVGL glue ----------
 static uint32_t tickCb() { return millis(); }
@@ -285,7 +289,21 @@ static void geom(lv_obj_t* o, JsonObjectConst w, int defW, int defH) {
 }
 
 static lv_obj_t* backBtn = nullptr;
-static void onLongPress(lv_event_t*) { pendingNav = "\x01"; navPending = true; }
+static std::set<String> acked;
+static std::map<String, uint32_t> critSeq;
+static uint32_t seqCounter = 0;
+static bool alertActive = false;
+
+static bool isCritical(const String& id) {
+  for (const Meta& m : metas) if (m.id == id) return m.prio == 3;
+  return false;
+}
+static void goBack() {
+  if (!curId.isEmpty() && isCritical(curId)) acked.insert(curId);   // leaving a critical card acknowledges it
+  pendingNav = "\x01";
+  navPending = true;
+}
+static void onLongPress(lv_event_t*) { goBack(); }
 
 static lv_obj_t* buildScreen(const String& id, JsonDocument& doc) {
   lv_obj_t* scr = lv_obj_create(nullptr);
@@ -431,23 +449,28 @@ static void onMenuItem(lv_event_t* e) {
   if (i < metas.size()) { pendingNav = metas[i].id; navPending = true; }
 }
 
+// High and critical cards are listed together first; " " sorts before any real group name.
+static String groupOf(const Meta& m) { return m.prio >= 2 ? String(" Alerts") : m.menu; }
+
 static void rebuildIndexLocked() {
   metas.clear();
   JsonDocument filter;
-  filter["id"] = true; filter["title"] = true; filter["menu"] = true; filter["expires"] = true;
+  filter["id"] = true; filter["title"] = true; filter["menu"] = true; filter["expires"] = true; filter["priority"] = true;
   filter["widgets"][0]["type"] = true;
   filter["widgets"][0]["series"][0]["key"] = true;
   for (const String& id : store::listScreenIds()) {
-    String txt;
-    if (!store::readFile(store::screenPath(id), txt, MAX_SCREEN_BYTES)) continue;
     JsonDocument doc;
-    if (deserializeJson(doc, txt, DeserializationOption::Filter(filter))) continue;
+    if (!store::readJson(store::screenPath(id), doc, &filter, MAX_SCREEN_BYTES)) continue;
     Meta m;
     m.id = id;
     int slash = id.lastIndexOf('/');
     m.title = doc["title"] | (slash < 0 ? id : id.substring(slash + 1)).c_str();
     m.menu = doc["menu"] | "";
     if (m.menu.isEmpty() && slash > 0) m.menu = id.substring(0, slash);   // group by parent path
+    {
+      String p = doc["priority"] | "normal";
+      m.prio = p == "low" ? 0 : p == "high" ? 2 : p == "critical" ? 3 : 1;
+    }
     m.expiresStr = doc["expires"] | "";
     if (!m.expiresStr.isEmpty() && !ui::parseUtc(m.expiresStr.c_str(), m.expires)) m.expires = 0;
     for (JsonObject w : doc["widgets"].as<JsonArray>())
@@ -456,7 +479,10 @@ static void rebuildIndexLocked() {
     metas.push_back(m);
   }
   std::sort(metas.begin(), metas.end(), [](const Meta& a, const Meta& b) {
-    return a.menu == b.menu ? a.title < b.title : a.menu < b.menu;
+    String ga = groupOf(a), gb = groupOf(b);
+    if (ga != gb) return ga < gb;
+    if (a.prio != b.prio) return a.prio > b.prio;
+    return a.title < b.title;
   });
 }
 
@@ -481,11 +507,18 @@ static lv_obj_t* buildMenu() {
     lv_list_add_text(list, store::ready() ? "No screens yet - upload one via the API" : "SD card not found");
   }
   for (size_t i = 0; i < metas.size(); i++) {
-    if (metas[i].menu != group) {
-      group = metas[i].menu;
-      if (!group.isEmpty()) lv_list_add_text(list, group.c_str());
+    String g = groupOf(metas[i]);
+    if (g != group) {
+      group = g;
+      if (!group.isEmpty()) lv_list_add_text(list, group == " Alerts" ? "Alerts" : group.c_str());
     }
-    lv_obj_t* btn = lv_list_add_button(list, nullptr, metas[i].title.c_str());
+    lv_obj_t* btn = lv_list_add_button(list, metas[i].prio == 3 ? LV_SYMBOL_WARNING : nullptr, metas[i].title.c_str());
+    if (metas[i].prio >= 2) {
+      lv_color_t col = metas[i].prio == 3 ? lv_color_hex(0xff4d4d) : lv_color_hex(0xffc400);
+      for (int k = 0; k < (int)lv_obj_get_child_count(btn); k++) lv_obj_set_style_text_color(lv_obj_get_child(btn, k), col, 0);
+    } else if (metas[i].prio == 0) {
+      for (int k = 0; k < (int)lv_obj_get_child_count(btn); k++) lv_obj_set_style_text_color(lv_obj_get_child(btn, k), lv_color_hex(0x888888), 0);
+    }
     lv_obj_add_event_cb(btn, onMenuItem, LV_EVENT_CLICKED, (void*)i);
   }
   lv_list_add_text(list, "System");
@@ -512,9 +545,8 @@ static void navigate(const String& target) {
     curId = "";
     curScr = buildMenu();
   } else {
-    String txt;
     JsonDocument doc;
-    if (!store::readFile(store::screenPath(target), txt, MAX_SCREEN_BYTES) || deserializeJson(doc, txt)) {
+    if (!store::readJson(store::screenPath(target), doc, nullptr, MAX_SCREEN_BYTES)) {
       navigate("\x01");
       return;
     }
@@ -561,16 +593,19 @@ void ui::begin() {
 void ui::loop() {
   static bool lastBoot = false;
   bool b = hal::bootPressed();
-  if (b && !lastBoot && !curId.isEmpty()) { pendingNav = "\x01"; navPending = true; }
+  if (b && !lastBoot && !curId.isEmpty()) { LvGuard gg; goBack(); }
   lastBoot = b;
 
   LvGuard g;
   if (navPending) {
     navPending = false;
     navigate(pendingNav);
-  } else if (indexDirty && curId.isEmpty()) {
-    navigate("\x01");
+  } else if (indexDirty) {
+    rebuildIndexLocked();
+    indexDirty = false;
+    if (curId.isEmpty()) navigate("\x01");
   }
+  checkAlerts();
   static uint32_t lastInfo = 0;
   if (curId == "\x02" && millis() - lastInfo > 2000) { lastInfo = millis(); refreshInfo(); }
   static uint32_t lastSweep = 0;
@@ -613,6 +648,7 @@ void ui::setStatusLine(const String& s) {
 void ui::forgetScreen(const String& id) {
   LvGuard g;
   data.erase(id);
+  acked.erase(id); critSeq.erase(id);
   indexDirty = true;
   if (curId == id) { pendingNav = "\x01"; navPending = true; }
 }
@@ -683,6 +719,7 @@ String ui::indexJson() {
   for (const Meta& m : metas) {
     JsonObject o = arr.add<JsonObject>();
     o["id"] = m.id; o["title"] = m.title; o["menu"] = m.menu;
+    o["priority"] = m.prio == 0 ? "low" : m.prio == 2 ? "high" : m.prio == 3 ? "critical" : "normal";
     if (m.expiresStr.isEmpty()) o["expires"] = nullptr; else o["expires"] = m.expiresStr;
   }
   String s;
@@ -700,9 +737,65 @@ static void sweepExpired() {
     store::removeFile(store::screenPath(id));
     store::removeFile(store::dataPath(id));
     data.erase(id);
+    acked.erase(id); critSeq.erase(id);
     if (curId == id) { pendingNav = "\x01"; navPending = true; }
     indexDirty = true;
     Serial.printf("expired: removed %s\n", id.c_str());
   }
   if (!dead.empty()) net::screensChanged();
+}
+
+// ---------- priority / alerts ----------
+static String nextAlert() {
+  String best;
+  uint32_t bestSeq = 0;
+  for (const Meta& m : metas) {
+    if (m.prio != 3 || acked.count(m.id)) continue;
+    uint32_t& sq = critSeq[m.id];
+    if (!sq) sq = ++seqCounter;
+    if (best.isEmpty() || sq > bestSeq) { best = m.id; bestSeq = sq; }
+  }
+  return best;
+}
+
+static void checkAlerts() {
+  if (indexDirty) return;
+  String a = nextAlert();
+  if (a.isEmpty()) {
+    if (alertActive) {
+      alertActive = false;
+      hal::led(false, false, false);
+      hal::backlight(net::brightness());
+    }
+    return;
+  }
+  if (!alertActive) { alertActive = true; hal::backlight(100); }   // wake a dimmed display
+  if (curId != a && !(navPending && pendingNav == a)) { pendingNav = a; navPending = true; }
+  hal::led((millis() / 500) % 2 == 0, false, false);              // blink red until acknowledged
+}
+
+void ui::cardUpdated(const String& id) {
+  LvGuard g;
+  acked.erase(id);
+  critSeq[id] = ++seqCounter;
+}
+
+bool ui::ack(const String& id) {
+  LvGuard g;
+  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+  bool any = false;
+  for (const Meta& m : metas)
+    if (m.prio == 3 && (id.isEmpty() || m.id == id) && !acked.count(m.id)) {
+      acked.insert(m.id);
+      any = true;
+      if (curId == m.id) { pendingNav = ""; navPending = true; }   // leave the card that was just acknowledged
+    }
+  return any || (!id.isEmpty() && isCritical(id));
+}
+
+int ui::alertCount() {
+  LvGuard g;
+  int n = 0;
+  for (const Meta& m : metas) if (m.prio == 3 && !acked.count(m.id)) n++;
+  return n;
 }

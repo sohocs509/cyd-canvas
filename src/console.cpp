@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "console.h"
+#include <esp_heap_caps.h>
 #include "config.h"
 #include "hal.h"
 #include "net.h"
 #include "store.h"
+#include "tlsmem.h"
+#include <WiFi.h>
+#include <WiFiClient.h>
 #include "ui.h"
 #include <ArduinoJson.h>
 
@@ -24,7 +28,7 @@ static void handle(String l) {
     Serial.println("ls | put <id> <json> | data <id> <json> | show <id> | menu | rm <id> | cal | info");
   } else if (cmd == "info") {
     Serial.printf("flushes=%u last=%ux%u nonzero=%u ", (unsigned)ui_flushes, (unsigned)ui_lastw, (unsigned)ui_lasth, (unsigned)ui_nonzero);
-    Serial.printf("heap=%u sd=%llu/%llu MB screens=%u\n", ESP.getFreeHeap(),
+    Serial.printf("largest=%u heap=%u sd=%llu/%llu MB screens=%u\n", (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getFreeHeap(),
                   store::usedBytes() >> 20, store::totalBytes() >> 20, (unsigned)ui::screenCount());
   } else if (cmd == "ls") {
     for (auto& n : store::listScreenIds()) Serial.println(n);
@@ -39,6 +43,7 @@ static void handle(String l) {
     }
     bool ok = store::writeFileAtomic(store::screenPath(id), (const uint8_t*)body.c_str(), body.length());
     ui::refreshIndex();
+    ui::cardUpdated(id);
     Serial.println(ok ? "OK" : "ERR write");
   } else if (cmd == "data") {
     int s2 = rest.indexOf(' ');
@@ -67,6 +72,31 @@ static void handle(String l) {
     String ssid = s2 < 0 ? rest : rest.substring(0, s2);
     String pw = s2 < 0 ? "" : rest.substring(s2 + 1);
     Serial.println(net::setWifi(ssid, pw) ? "OK" : "ERR bad ssid/password");
+  } else if (cmd == "probe") {
+    IPAddress ip;
+    bool alive = rest.isEmpty() ? net::probe() : (ip.fromString(rest) && net::probe(ip));
+    Serial.printf("probe %s -> %s\n", rest.isEmpty() ? "gateway" : rest.c_str(), alive ? "ALIVE" : "NO ANSWER");
+  } else if (cmd == "nettest") {
+    Serial.printf("wifi status=%d rssi=%d ip=%s gw=%s mac=%s\n", (int)WiFi.status(), WiFi.RSSI(), WiFi.localIP().toString().c_str(),
+                  WiFi.gatewayIP().toString().c_str(), WiFi.BSSIDstr().c_str());
+    const char* hosts[] = {"192.168.10.1", "192.168.10.137"};
+    int ports[] = {80, 1883};
+    for (int i = 0; i < 2; i++) {
+      WiFiClient c;
+      uint32_t t = millis();
+      bool ok = c.connect(hosts[i], ports[i], 3000);
+      Serial.printf("connect %s:%d -> %s in %lu ms\n", hosts[i], ports[i], ok ? "OK" : "FAIL", (unsigned long)(millis() - t));
+      c.stop();
+    }
+  } else if (cmd == "heap") {
+    Serial.printf("tls pool: free=%u largest=%u\n", (unsigned)tlsmem::freeBytes(), (unsigned)tlsmem::largestFree());
+    Serial.printf("integrity=%s\n", heap_caps_check_integrity_all(true) ? "OK" : "CORRUPT");
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    void* a = heap_caps_malloc(17000, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    void* b = heap_caps_malloc(17000, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    Serial.printf("two 17000-byte allocs: %s %s\n", a ? "ok" : "FAIL", b ? "ok" : "FAIL");
+    if (a) heap_caps_free(a);
+    if (b) heap_caps_free(b);
   } else if (cmd == "key") {
     Serial.println(net::apiKey());
     Serial.println(net::tlsPin());

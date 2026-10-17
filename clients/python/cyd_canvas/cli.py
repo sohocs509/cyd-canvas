@@ -78,6 +78,7 @@ def main(argv=None) -> int:
     s.add_argument("--prefix", help="MQTT topic prefix (default cyd/<device name>)")
     s.add_argument("--mqtt-user"); s.add_argument("--mqtt-password")
 
+    s = sub.add_parser("ack", help="acknowledge critical cards (all if no id)"); s.add_argument("id", nargs="?", default="")
     s = sub.add_parser("show"); s.add_argument("id")
     sub.add_parser("menu")
     s = sub.add_parser("brightness"); s.add_argument("percent", type=int)
@@ -131,6 +132,7 @@ def main(argv=None) -> int:
                 res = {"ok": True, "via": "mqtt"}
             else:
                 res = c.data(a.id, vals)
+        elif a.cmd == "ack": res = c.ack(a.id)
         elif a.cmd == "show": res = c.show(a.id)
         elif a.cmd == "menu": res = c.menu()
         elif a.cmd == "brightness": res = c.brightness(a.percent)

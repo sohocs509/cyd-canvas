@@ -9,6 +9,7 @@ import http.client
 import json
 import os
 import re
+import socket
 import ssl
 import time
 from pathlib import Path
@@ -111,8 +112,21 @@ class Profile:
 
 
 class Canvas:
-    def __init__(self, host: str, api_key: str, pin: Optional[str], port: int = 443, timeout: float = 10):
+    def __init__(self, host: str, api_key: str, pin: Optional[str], port: int = 443, timeout: float = 10,
+                 keepalive: bool = True):
         self.host, self.api_key, self.pin, self.port, self.timeout = host, api_key, pin, port, timeout
+        self.keepalive = keepalive
+        self._conn = None
+
+    def close(self) -> None:
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            finally:
+                self._conn = None
+
+    def __enter__(self): return self
+    def __exit__(self, *exc): self.close()
 
     @classmethod
     def from_profile(cls, name: str = "default") -> "Canvas":
@@ -130,13 +144,37 @@ class Canvas:
             else:
                 data = body.encode() if isinstance(body, str) else body
                 headers["Content-Type"] = "application/octet-stream"
-        conn = _PinnedConnection(self.host, self.port, self.pin, self.timeout)
-        try:
-            conn.request(method, path, body=data, headers=headers)
-            resp = conn.getresponse()
-            raw = resp.read()
-        finally:
-            conn.close()
+        # A TLS handshake costs the device ~2 s, so one connection is kept open and reused. The device
+        # serves one client at a time; a second client simply replaces this connection, and we reconnect.
+        for attempt in range(5):
+            reused = self._conn is not None
+            if not reused:
+                conn = _PinnedConnection(self.host, self.port, self.pin, self.timeout)
+                try:
+                    conn.connect()
+                except (ConnectionError, ssl.SSLError, socket.timeout, TimeoutError):
+                    conn.close()
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.4 * (attempt + 1))
+                    continue
+                self._conn = conn
+            conn = self._conn
+            try:
+                conn.request(method, path, body=data, headers=headers)
+                resp = conn.getresponse()
+                raw = resp.read()
+            except (http.client.RemoteDisconnected, BrokenPipeError, ConnectionResetError, ssl.SSLError):
+                self.close()
+                if reused:          # stale kept-alive connection: nothing was processed, retry on a fresh one
+                    continue
+                raise
+            except Exception:
+                self.close()
+                raise
+            if resp.will_close or not self.keepalive:
+                self.close()
+            break
         try:
             payload = json.loads(raw) if raw else None
         except ValueError:
@@ -176,6 +214,10 @@ class Canvas:
 
     def put_asset(self, name: str, data: bytes) -> dict:
         return self._call("PUT", f"/api/assets/{name}", data)
+
+    def ack(self, sid: str = "") -> dict:
+        """Acknowledge a critical card (empty = all), releasing the display and the blinking LED."""
+        return self._call("POST", f"/api/ack/{sid}" if sid else "/api/ack", b"")
 
     def data(self, sid: str, values: dict) -> dict: return self._call("POST", f"/api/data/{sid}", values)
     def show(self, sid: str) -> dict: return self._call("POST", f"/api/show/{sid}", b"")

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 #include <Arduino.h>
+#include <ArduinoJson.h>
+#include <FS.h>
 #include <vector>
 
 namespace store {
@@ -21,6 +23,8 @@ String dataPath(const String& id);     // /data/hosts~milo~health.json
 std::vector<String> listScreenIds();
 bool validAssetName(const String& name);
 
+// Parse JSON directly from the card (optionally filtered) without buffering the file in a String.
+bool readJson(const String& path, JsonDocument& doc, JsonDocument* filter, size_t maxLen);
 bool readFile(const String& path, String& out, size_t maxLen);
 bool writeFileAtomic(const String& path, const uint8_t* data, size_t len);
 bool removeFile(const String& path);
@@ -38,6 +42,7 @@ class Writer {
   size_t size() const { return written_; }
 
  private:
+  File f_;                       // per writer: two writers (an upload and the data autosave) must not share a handle
   String tmp_, fin_;
   bool open_ = false;
   size_t written_ = 0;

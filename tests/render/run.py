@@ -8,7 +8,7 @@ Without --interactive each step is shown for --hold seconds with its expectation
 with it you press Enter (ok) or type a note (problem) after each step and get a report.
 The API checks (auth, invalid input, unknown ids) are automatic and decide the exit code.
 """
-import argparse, http.client, json, math, os, ssl, struct, sys, time
+import argparse, calendar, http.client, json, math, os, ssl, struct, sys, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -99,9 +99,43 @@ def id_checks(c: Canvas):
     if c.status().get("time_valid"):
         st, _ = raw(c, "PUT", "/api/screens/test/exp-past", json.dumps(tiny("test/exp-past", expires=utc_in(-60))).encode())
         check("expires in the past -> 400", st == 400, str(st))
-        check("device clock within 120 s of host", abs(time.mktime(time.strptime(c.status()["time_utc"], "%Y-%m-%dT%H:%M:%SZ")) - time.mktime(time.gmtime())) < 120)
+        check("device clock within 120 s of host", abs(calendar.timegm(time.strptime(c.status()["time_utc"], "%Y-%m-%dT%H:%M:%SZ")) - time.time()) < 120)
     else:
         print("  [SKIP] clock not synced yet; expiry-in-past check skipped")
+
+
+def alert_test(c: Canvas):
+    print("Priority: critical cards take over the display")
+    cid = "test/t15-critical"
+    c.menu()
+    time.sleep(1)
+    c.put_screen(HERE / "screens" / "t15-critical.json")
+    for _ in range(20):
+        if c.status()["current"] == cid:
+            break
+        time.sleep(0.5)
+    st = c.status()
+    check("critical card displayed by itself", st["current"] == cid, st["current"])
+    check("alert counted", st["alerts"] == 1, str(st["alerts"]))
+    check("index shows priority", any(e["id"] == cid and e["priority"] == "critical" for e in c.index()))
+    c.menu()                      # a remote 'menu' must not hide an unacknowledged critical card
+    time.sleep(2)
+    check("menu request cannot dismiss it", c.status()["current"] == cid, c.status()["current"])
+    c.ack(cid)
+    time.sleep(1.5)
+    st = c.status()
+    check("ack releases the display", st["current"] == "" and st["alerts"] == 0, f"{st['current']!r} alerts={st['alerts']}")
+    c.put_screen(HERE / "screens" / "t15-critical.json")      # re-upload re-raises the alert
+    time.sleep(2)
+    check("re-upload alerts again", c.status()["current"] == cid)
+    c.delete_screen(cid)
+    time.sleep(1.5)
+    st = c.status()
+    check("deleting the card clears the alert", st["alerts"] == 0 and st["current"] == "", f"{st['current']!r} alerts={st['alerts']}")
+    st, _ = raw(c, "PUT", "/api/screens/test/prio-bad", json.dumps(tiny("test/prio-bad", priority="urgent")).encode())
+    check("unknown priority -> 400", st == 400, str(st))
+    st, _ = raw(c, "POST", "/api/ack/test/nothing-here")
+    check("ack of unknown card -> 404", st == 404, str(st))
 
 
 def expiry_test(c: Canvas, man):
@@ -173,6 +207,7 @@ def main():
         check(f"{inv['id']} was not stored", inv["id"] not in c.screens())
 
     id_checks(c)
+    alert_test(c)
     import tempfile
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)
@@ -184,6 +219,8 @@ def main():
     report = []
     for case in man["cases"]:
         if a.only and a.only not in case["id"]:
+            continue
+        if case.get("skip_auto"):
             continue
         if case.get("slow") and not a.slow:
             print(f"\n{case['id']}  (skipped: needs --slow)")

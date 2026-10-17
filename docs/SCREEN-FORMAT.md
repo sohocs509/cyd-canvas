@@ -41,6 +41,7 @@ Machine-readable definition: [`schema/screen.schema.json`](../schema/screen.sche
 | `id` | yes | unique **path**, 1-4 segments joined by `/` (`hosts/milo/health`); each segment `[a-z0-9][a-z0-9_-]{0,31}`, whole id ≤ 64 chars. Must equal the id in the URL |
 | `title` | no | menu text, ≤ 32 chars; defaults to the last segment of the id |
 | `menu` | no | group heading in the menu (≤ 24 chars); defaults to the id's parent path (`hosts/milo`), so path ids group themselves |
+| `priority` | no | `low` / `normal` (default) / `high` / `critical`, see below |
 | `expires` | no | UTC time after which the device **deletes** the card, `2026-10-20T18:00:00Z`. No `expires` = keep forever |
 | `data` | no | readings stored with the card, same shape as a data message (section 2) |
 | `bg` | no | background colour, default black |
@@ -48,6 +49,21 @@ Machine-readable definition: [`schema/screen.schema.json`](../schema/screen.sche
 | `thresholds` | no | recolour a value by its reading, see below |
 
 File size limit: **16 KB**.
+
+### Priority
+
+| Value | Menu | Behaviour |
+|---|---|---|
+| `low` | normal group, greyed | none |
+| `normal` | normal group | none |
+| `high` | **Alerts** group at the top, amber | none |
+| `critical` | **Alerts** group at the top, red with a warning icon | **takes over the display** the moment it is uploaded, forces the backlight to 100 %, blinks the red LED |
+
+A critical card stays on screen until it is **acknowledged**: tap its ✕ (or press BOOT, or long-press),
+or `POST /api/ack/<id>` (`cyd-canvas ack [id]`) from a host. A remote `show`/`menu` request cannot
+dismiss it. If several are unacknowledged, the newest shows first and the rest follow as each is
+acknowledged. Re-uploading a card (same id) raises the alert again; deleting or expiring it clears it.
+After a reboot unacknowledged critical cards show again. Live data updates do not re-raise an alert.
 
 ### Identity, overwrite and expiry
 

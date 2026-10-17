@@ -15,6 +15,7 @@ bool setWifi(const String& ssid, const String& pass);
 void setBrightness(int percent);
 int brightness();
 void screensChanged();        // republish Home Assistant discovery
+bool probe(IPAddress server = IPAddress((uint32_t)0));  // round trip to the router's DNS
 void resetCredentials();
 String apiKey();      // physical-access only (USB console, device screen)
 String tlsPin();      // new API key + new certificate on next boot
