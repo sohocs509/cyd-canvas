@@ -13,7 +13,7 @@ String current();            // "" when the menu is showing
 void setStatusLine(const String& s);  // shown at the bottom of the menu
 
 // Merge readings into a screen's data and update it live if open. Safe from any task.
-void applyData(const String& id, JsonObjectConst data);
+bool applyData(const String& id, JsonObjectConst data);  // false if no such screen
 void forgetScreen(const String& id);  // drop cached data after delete
 size_t screenCount();
 }

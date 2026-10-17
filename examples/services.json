@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "services",
+  "title": "Services",
+  "menu": "Hosts",
+  "widgets": [
+    { "type": "image", "x": 8, "y": 8, "src": "logo.bin" },
+    { "type": "label", "x": 80, "y": 10, "text": "Backups", "font": 24 },
+    { "type": "led", "x": 80, "y": 46, "key": "backup_ok", "color": "#3fdc6c" },
+    { "type": "label", "x": 102, "y": 44, "text": "last run ok", "font": 16 },
+    { "type": "bar", "x": 8, "y": 90, "w": 300, "h": 14, "key": "disk", "min": 0, "max": 100, "color": "#4aa3ff" },
+    { "type": "table", "x": 8, "y": 116, "w": 300, "key": "services", "cols": ["name", "state"], "rows": 5 }
+  ],
+  "thresholds": { "disk": [[70, "#ffc400"], [90, "#ff4d4d"]] }
+}

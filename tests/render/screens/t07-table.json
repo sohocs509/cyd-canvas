@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "t07-table",
+  "title": "T07 table",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "table",
+      "x": 8,
+      "y": 8,
+      "w": 304,
+      "key": "rows",
+      "cols": [
+        "name",
+        "state",
+        "note"
+      ],
+      "rows": 8
+    }
+  ]
+}

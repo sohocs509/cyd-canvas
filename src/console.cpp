@@ -2,6 +2,7 @@
 #include "console.h"
 #include "config.h"
 #include "hal.h"
+#include "net.h"
 #include "store.h"
 #include "ui.h"
 #include <ArduinoJson.h>
@@ -59,6 +60,16 @@ static void handle(String l) {
     store::removeFile("/data/" + rest + ".json");
     ui::forgetScreen(rest);
     Serial.println(ok ? "OK" : "ERR");
+  } else if (cmd == "wifi") {
+    int s2 = rest.indexOf(' ');
+    String ssid = s2 < 0 ? rest : rest.substring(0, s2);
+    String pw = s2 < 0 ? "" : rest.substring(s2 + 1);
+    Serial.println(net::setWifi(ssid, pw) ? "OK" : "ERR bad ssid/password");
+  } else if (cmd == "key") {
+    Serial.println(net::apiKey());
+    Serial.println(net::tlsPin());
+  } else if (cmd == "net") {
+    Serial.println(net::statusLine());
   } else if (cmd == "cal") {
     hal::calibrate();
     ui::showMenu();

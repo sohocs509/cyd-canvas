@@ -2,6 +2,7 @@
 #include "ui.h"
 #include "config.h"
 #include "hal.h"
+#include "net.h"
 #include "store.h"
 #include <lvgl.h>
 #include <SD.h>
@@ -117,6 +118,28 @@ static lv_fs_res_t fsTell(lv_fs_drv_t*, void* p, uint32_t* pos) {
 }
 
 // ---------- helpers ----------
+// A user-supplied printf format is only safe if it has exactly one floating-point conversion
+// ([flags][width][.prec] f/e/g) and nothing else except "%%". Anything else (%n, %s, %d...) is
+// replaced by the default.
+static String safeFmt(const char* in) {
+  const char* def = "%.1f";
+  if (!in || !*in || strlen(in) > 15) return def;
+  int conversions = 0;
+  for (const char* p = in; *p; p++) {
+    if (*p != '%') continue;
+    p++;
+    if (*p == '%') continue;
+    while (*p && strchr("-+ 0#", *p)) p++;
+    int digits = 0;
+    while (*p >= '0' && *p <= '9') { p++; digits++; }
+    if (digits > 2) return def;
+    if (*p == '.') { p++; digits = 0; while (*p >= '0' && *p <= '9') { p++; digits++; } if (digits > 2) return def; }
+    if (!*p || !strchr("feEgG", *p)) return def;
+    conversions++;
+  }
+  return conversions == 1 ? String(in) : String(def);
+}
+
 static lv_color_t parseColor(const char* s, lv_color_t def) {
   if (!s || s[0] != '#' || strlen(s) != 7) return def;
   return lv_color_hex(strtoul(s + 1, nullptr, 16));
@@ -240,7 +263,7 @@ static void updateBind(Bind& b, ScreenData& sd) {
 }
 
 static void updateAll() {
-  if (curId.isEmpty()) return;
+  if (binds.empty()) return;
   ScreenData& sd = data[curId];
   for (Bind& b : binds) updateBind(b, sd);
 }
@@ -293,7 +316,7 @@ static lv_obj_t* buildScreen(const String& id, JsonDocument& doc) {
       plain(l);
     } else if (type == "value") {
       b.kind = K_VALUE;
-      b.fmt = w["fmt"] | "%.1f";
+      b.fmt = safeFmt(w["fmt"] | "%.1f");
       b.unit = w["unit"] | "";
       b.obj = lv_label_create(scr);
       lv_label_set_text(b.obj, "--");
@@ -370,6 +393,35 @@ static lv_obj_t* buildScreen(const String& id, JsonDocument& doc) {
   return scr;
 }
 
+static bool infoReveal = false;
+static lv_obj_t* infoLbl = nullptr;
+static void refreshInfo() { if (infoLbl) lv_label_set_text(infoLbl, net::infoText(infoReveal).c_str()); }
+static void onReveal(lv_event_t*) { infoReveal = !infoReveal; refreshInfo(); }
+static void onInfoItem(lv_event_t*) { pendingNav = "\x02"; navPending = true; }
+
+static lv_obj_t* buildInfo() {
+  infoReveal = false;
+  lv_obj_t* scr = lv_obj_create(nullptr);
+  lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
+  lv_obj_set_style_pad_all(scr, 0, 0);
+  lv_obj_set_style_border_width(scr, 0, 0);
+  lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+  infoLbl = lv_label_create(scr);
+  lv_obj_set_style_text_font(infoLbl, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(infoLbl, lv_color_white(), 0);
+  lv_obj_set_pos(infoLbl, 8, 8);
+  lv_obj_set_width(infoLbl, SCREEN_W - 56);
+  refreshInfo();
+  lv_obj_t* btn = lv_button_create(scr);
+  lv_obj_set_size(btn, 190, 32);
+  lv_obj_set_pos(btn, 8, SCREEN_H - 40);
+  lv_obj_t* l = lv_label_create(btn);
+  lv_label_set_text(l, "Show / hide API key");
+  lv_obj_center(l);
+  lv_obj_add_event_cb(btn, onReveal, LV_EVENT_CLICKED, nullptr);
+  return scr;
+}
+
 static void onMenuItem(lv_event_t* e) {
   size_t i = (size_t)lv_event_get_user_data(e);
   if (i < metas.size()) { pendingNav = metas[i].id; navPending = true; }
@@ -428,6 +480,9 @@ static lv_obj_t* buildMenu() {
     lv_obj_t* btn = lv_list_add_button(list, nullptr, metas[i].title.c_str());
     lv_obj_add_event_cb(btn, onMenuItem, LV_EVENT_CLICKED, (void*)i);
   }
+  lv_list_add_text(list, "System");
+  lv_obj_t* ib = lv_list_add_button(list, LV_SYMBOL_SETTINGS, "Device info");
+  lv_obj_add_event_cb(ib, onInfoItem, LV_EVENT_CLICKED, nullptr);
   statusLbl = lv_label_create(scr);
   lv_obj_set_style_text_font(statusLbl, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(statusLbl, lv_color_hex(0x888888), 0);
@@ -440,7 +495,11 @@ static void navigate(const String& target) {
   lv_obj_t* old = curScr;
   binds.clear();
   statusLbl = nullptr;
-  if (target == "\x01") {
+  infoLbl = nullptr;
+  if (target == "\x02") {
+    curId = "\x02";
+    curScr = buildInfo();
+  } else if (target == "\x01") {
     if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
     curId = "";
     curScr = buildMenu();
@@ -503,6 +562,8 @@ void ui::loop() {
   } else if (indexDirty && curId.isEmpty()) {
     navigate("\x01");
   }
+  static uint32_t lastInfo = 0;
+  if (curId == "\x02" && millis() - lastInfo > 2000) { lastInfo = millis(); refreshInfo(); }
   if (millis() - lastPersist > 60000) {
     lastPersist = millis();
     for (auto& kv : data)
@@ -518,7 +579,7 @@ bool ui::show(const String& id) {
   return true;
 }
 void ui::showMenu() { pendingNav = "\x01"; navPending = true; }
-String ui::current() { return curId; }
+String ui::current() { return curId == "\x02" ? String("info") : curId; }
 size_t ui::screenCount() { return metas.size(); }
 
 void ui::setStatusLine(const String& s) {
@@ -534,11 +595,13 @@ void ui::forgetScreen(const String& id) {
   if (curId == id) { pendingNav = "\x01"; navPending = true; }
 }
 
-void ui::applyData(const String& id, JsonObjectConst d) {
+bool ui::applyData(const String& id, JsonObjectConst d) {
   LvGuard g;
+  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
   // chart keys for this screen, so history is only kept where it is used
   const Meta* m = nullptr;
   for (const Meta& x : metas) if (x.id == id) { m = &x; break; }
+  if (!m) return false;
   ScreenData& sd = loadData(id);
   for (JsonPairConst kv : d) {
     String k = kv.key().c_str();
@@ -554,4 +617,5 @@ void ui::applyData(const String& id, JsonObjectConst d) {
   }
   sd.dirty = true;
   if (curId == id) updateAll();
+  return true;
 }

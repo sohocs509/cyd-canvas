@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "id": "t05-chart-line",
+  "title": "T05 line chart",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "label",
+      "x": 8,
+      "y": 4,
+      "text": "sine, 60 points, 0..100",
+      "font": 12
+    },
+    {
+      "type": "chart",
+      "x": 8,
+      "y": 22,
+      "w": 300,
+      "h": 150,
+      "points": 60,
+      "min": 0,
+      "max": 100,
+      "style": "line",
+      "series": [
+        {
+          "key": "wave",
+          "color": "#3fdc6c"
+        }
+      ]
+    },
+    {
+      "type": "value",
+      "x": 8,
+      "y": 184,
+      "key": "wave",
+      "fmt": "now %.0f",
+      "font": 24
+    }
+  ]
+}

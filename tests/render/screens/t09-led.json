@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "id": "t09-led",
+  "title": "T09 LEDs",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "led",
+      "x": 10,
+      "y": 14,
+      "w": 22,
+      "h": 22,
+      "key": "l1",
+      "color": "#3fdc6c"
+    },
+    {
+      "type": "label",
+      "x": 44,
+      "y": 14,
+      "text": "l1 green: on, then off",
+      "font": 16
+    },
+    {
+      "type": "led",
+      "x": 10,
+      "y": 50,
+      "w": 22,
+      "h": 22,
+      "key": "l2",
+      "color": "#ff4d4d"
+    },
+    {
+      "type": "label",
+      "x": 44,
+      "y": 50,
+      "text": "l2 red: off, then on",
+      "font": 16
+    },
+    {
+      "type": "led",
+      "x": 10,
+      "y": 86,
+      "w": 22,
+      "h": 22,
+      "key": "l3",
+      "color": "#ffc400"
+    },
+    {
+      "type": "label",
+      "x": 44,
+      "y": 86,
+      "text": "l3 amber: true/false",
+      "font": 16
+    },
+    {
+      "type": "led",
+      "x": 10,
+      "y": 122,
+      "w": 22,
+      "h": 22,
+      "key": "never",
+      "color": "#4aa3ff"
+    },
+    {
+      "type": "label",
+      "x": 44,
+      "y": 122,
+      "text": "no data: stays off",
+      "font": 16
+    }
+  ]
+}

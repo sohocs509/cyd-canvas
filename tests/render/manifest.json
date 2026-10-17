@@ -1,0 +1,45 @@
+{
+  "assets": ["t-gradient.bin", "t-alpha.bin"],
+  "cases": [
+    {"id": "t01-text", "steps": [
+      {"expect": "Four lines in growing font sizes (12/16/24/32); 'Red', 'Green', 'Blue' in their colours; digits line readable. No overlap with the X button at top-right."}]},
+    {"id": "t02-value-format", "steps": [
+      {"data": {"a": 3.14159}, "expect": "3 / 3.14 V / '   3.1' / 3% / 3.14e+00 ; the two hostile formats fall back to 3.1 (no crash, no garbage); 'no data key' shows --; bottom value 3.1 in big font."},
+      {"data": {"a": 1234.5678}, "expect": "1235 / 1234.57 V / 1234.6 / 1235% / 1.23e+03 ; hostile rows 1234.6."},
+      {"data": {"a": -7.5}, "expect": "-8 (or -7) / -7.50 V / '  -7.5' / ... negatives render correctly."}]},
+    {"id": "t03-bar-thresholds", "steps": [
+      {"data": {"b1": 0, "b2": 25, "b3": 50, "b4": 75, "b5": 95, "b6": 100}, "expect": "Bars empty,25%,50% blue; 75 amber; 95 and 100 red; numbers at the right match."},
+      {"data": {"b1": 150, "b2": -20, "b3": 69.9, "b4": 70, "b5": 89.9, "b6": 90}, "expect": "150 -> full bar; -20 -> empty bar; 69.9 blue, 70 amber; 89.9 amber, 90 red (threshold edges inclusive)."}]},
+    {"id": "t04-arcs", "steps": [
+      {"data": {"g1": 10, "g2": 50, "g3": 0, "g4": 7}, "expect": "Four gauges with their value in the centre. g3 (range -50..50) at 0 is half way."},
+      {"data": {"g1": 85, "g2": 100, "g3": 50, "g4": 10}, "expect": "g1 amber at 85; g2 and g4 full; g3 full."},
+      {"data": {"g1": 97, "g3": -50, "g4": 0}, "expect": "g1 red; g3 and g4 empty; g2 unchanged (partial update keeps old values)."}]},
+    {"id": "t05-chart-line", "steps": [
+      {"gen": "sine", "key": "wave", "count": 90, "min": 5, "max": 95, "delay": 0.12, "expect": "A smooth sine wave builds across the chart, then scrolls left once 60 points are reached; 'now N' tracks the latest value."}]},
+    {"id": "t06-chart-multi", "steps": [
+      {"gen": "multi", "keys": ["s1", "s2", "s3", "s4"], "count": 40, "delay": 0.12, "expect": "Top: four coloured lines (green/blue/amber/red) of different shapes, 30-point window. Bottom: only s1 as bars, 12-point window."}]},
+    {"id": "t07-table", "steps": [
+      {"data": {"rows": [{"name": "caddy", "state": "ok", "note": "443"}, {"name": "postgres", "state": "ok", "note": "5432"}, {"name": "mailscan", "state": "degraded", "note": "clamd slow"}]}, "expect": "Header-less 3-column table, 3 rows filled, remaining 5 rows blank."},
+      {"data": {"rows": [["a", "b", "c"], ["d", "e", "f"]]}, "expect": "Array-of-arrays form: 2 rows, old rows 3 cleared."},
+      {"data": {"rows": [{"name": "a-very-long-name-that-does-not-fit", "state": "x", "note": "y"}, {"name": "n2", "state": "", "note": null}, {"name": "n3", "state": "ok", "note": 42}, {"name": "n4"}, {"name": "n5"}, {"name": "n6"}, {"name": "n7"}, {"name": "n8"}, {"name": "n9-should-not-show"}]}, "expect": "Long text wraps or clips inside its cell without crashing; empty/null/missing cells blank; number 42 shown; only 8 rows shown (n9 absent)."}]},
+    {"id": "t08-images", "steps": [
+      {"expect": "Left: colour gradient square. Middle: a disc with transparent corners over the blue background. Right: nothing drawn for the missing asset, no error, rest of screen intact."}]},
+    {"id": "t09-led", "steps": [
+      {"data": {"l1": 1, "l2": 0, "l3": true}, "expect": "l1 green lit, l2 dark, l3 lit amber."},
+      {"data": {"l1": 0, "l2": 1, "l3": false}, "expect": "l1 dark, l2 red lit, l3 dark. 'no data' LED never lights."}]},
+    {"id": "t10-background", "steps": [
+      {"data": {"v": 42.5}, "expect": "Light grey-blue background, dark text, red 42.5, green bar about 42%. X button still visible."}]},
+    {"id": "t11-dense", "steps": [
+      {"expect": "64 two-digit labels in an 8x8 grid, 00 to 63 (rows reach the bottom edge). Screen stays responsive; tapping X returns to menu."}]},
+    {"id": "t12-no-data", "steps": [
+      {"expect": "Before any data: '--', empty bar, empty arc ('--'), dark LED, empty chart, empty table. No crash."}]},
+    {"id": "t13-corner", "steps": [
+      {"expect": "The X back button is drawn on top of the 'UNDER' label and stays tappable."}]}
+  ],
+  "invalid": [
+    {"file": "invalid/schema-2.json", "id": "bad-schema", "status": 400},
+    {"file": "invalid/id-mismatch.json", "id": "wrong-url-id", "status": 400},
+    {"file": "invalid/widgets-not-array.json", "id": "bad-widgets", "status": 400},
+    {"file": "invalid/not-json.json", "id": "not-json", "status": 400}
+  ]
+}

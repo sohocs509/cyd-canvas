@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "id": "bad-widgets",
+  "widgets": {
+    "type": "label"
+  }
+}

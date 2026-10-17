@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "id": "t02-value-format",
+  "title": "T02 value formats",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "label",
+      "x": 8,
+      "y": 6,
+      "text": "fmt %.0f",
+      "font": 12
+    },
+    {
+      "type": "value",
+      "x": 110,
+      "y": 2,
+      "key": "a",
+      "fmt": "%.0f",
+      "font": 16
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 30,
+      "text": "fmt %.2f unit V",
+      "font": 12
+    },
+    {
+      "type": "value",
+      "x": 110,
+      "y": 26,
+      "key": "a",
+      "fmt": "%.2f",
+      "unit": " V",
+      "font": 16
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 54,
+      "text": "fmt %6.1f",
+      "font": 12
+    },
+    {
+      "type": "value",
+      "x": 110,
+      "y": 50,
+      "key": "a",
+      "fmt": "%6.1f",
+      "font": 16
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 78,
+      "text": "fmt %.0f%% unit",
+      "font": 12
+    },
+    {
+      "type": "value",
+      "x": 110,
+      "y": 74,
+      "key": "a",
+      "fmt": "%.0f%%",
+      "font": 16
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 102,
+      "text": "fmt %e",
+      "font": 12
+    },
+    {
+      "type": "value",
+      "x": 110,
+      "y": 98,
+      "key": "a",
+      "fmt": "%.2e",
+      "font": 16
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 126,
+      "text": "hostile %n%s%x",
+      "font": 12
+    },
+    {
+      "type": "value",
+      "x": 110,
+      "y": 122,
+      "key": "a",
+      "fmt": "%n%s%x",
+      "font": 16
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 150,
+      "text": "hostile %d",
+      "font": 12
+    },
+    {
+      "type": "value",
+      "x": 110,
+      "y": 146,
+      "key": "a",
+      "fmt": "%d",
+      "font": 16
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 174,
+      "text": "no data key",
+      "font": 12
+    },
+    {
+      "type": "value",
+      "x": 110,
+      "y": 170,
+      "key": "missing",
+      "font": 16
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 198,
+      "text": "font 32",
+      "font": 12
+    },
+    {
+      "type": "value",
+      "x": 110,
+      "y": 190,
+      "key": "a",
+      "fmt": "%.1f",
+      "font": 32
+    }
+  ]
+}

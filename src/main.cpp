@@ -3,6 +3,7 @@
 #include "config.h"
 #include "console.h"
 #include "hal.h"
+#include "net.h"
 #include "store.h"
 #include "ui.h"
 
@@ -22,6 +23,7 @@ void setup() {
   Serial.printf("SD: %s\n", sd ? "ok" : "missing");
   ui::begin();
   ui::refreshIndex();
+  net::begin();
   console::begin();
 }
 

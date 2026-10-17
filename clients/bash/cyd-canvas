@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# cyd-canvas bash client. Needs: curl, openssl (pairing only). No jq required.
+# Profile: ~/.config/cyd-canvas/<profile>.env (shared with the Python client).
+set -euo pipefail
+
+PROFILE="${CYD_PROFILE:-default}"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/cyd-canvas/$PROFILE.env"
+
+die() { echo "cyd-canvas: $*" >&2; exit 1; }
+
+usage() {
+  cat <<USAGE
+usage: cyd-canvas [-p profile] <command> [args]
+  pair HOST [PIN]        save host, API key (read from stdin or prompt) and certificate pin
+  status | list | assets | menu
+  get ID | put FILE | rm ID
+  asset-put FILE.bin [NAME] | asset-rm NAME
+  data ID key=value ...  numbers/booleans sent as-is, anything else as a string
+  data ID -j '{"json":1}'
+  show ID | brightness 0-100
+  mqtt-config HOST [PORT] [USER PASSWORD]
+Images must already be LVGL .bin files (use the Python client to convert PNG/JPEG).
+USAGE
+  exit 2
+}
+
+[ "${1:-}" = "-p" ] && { PROFILE="$2"; CONF="${XDG_CONFIG_HOME:-$HOME/.config}/cyd-canvas/$PROFILE.env"; shift 2; }
+[ $# -ge 1 ] || usage
+cmd="$1"; shift
+
+pubkey_pin() {  # prints sha256//<base64> for HOST:443 as presented now
+  echo | openssl s_client -connect "$1:443" 2>/dev/null | openssl x509 -pubkey -noout \
+    | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64 | sed 's/^/sha256\/\//'
+}
+
+if [ "$cmd" = "pair" ]; then
+  host="${1:?host}"; expect="${2:-}"
+  have="$(pubkey_pin "$host")"
+  [ -n "$have" ] || die "cannot read certificate from $host"
+  if [ -n "$expect" ] && [ "$expect" != "$have" ]; then
+    die "PIN MISMATCH: expected $expect, device presents $have. Not saved."
+  fi
+  [ -n "$expect" ] || echo "Device presents $have - compare with 'TLS pin' on its Device info screen."
+  if [ -t 0 ]; then read -r -s -p "API key (Device info screen): " key; echo; else read -r key; fi
+  mkdir -p "$(dirname "$CONF")"
+  ( umask 077; printf 'CYD_HOST="%s"\nCYD_KEY="%s"\nCYD_PIN="%s"\n' "$host" "$key" "$have" > "$CONF" )
+  echo "saved $CONF"
+  CYD_HOST="$host" CYD_KEY="$key" CYD_PIN="$have"
+  cmd=status
+else
+  [ -f "$CONF" ] || die "no profile $CONF - run: cyd-canvas pair HOST"
+  # shellcheck disable=SC1090
+  . "$CONF"
+fi
+
+api() {  # api METHOD PATH [curl args...]
+  local method="$1" path="$2"; shift 2
+  local out code
+  out="$(mktemp)"; trap 'rm -f "$out"' RETURN
+  # -k: the device certificate is self-signed; trust comes from --pinnedpubkey.
+  code="$(curl -sk --max-time 15 --pinnedpubkey "$CYD_PIN" -H "X-Api-Key: $CYD_KEY" \
+          -X "$method" -o "$out" -w '%{http_code}' "$@" "https://$CYD_HOST$path")" \
+    || die "cannot reach $CYD_HOST (or certificate pin mismatch)"
+  cat "$out"; echo
+  [ "$code" -lt 400 ] || die "HTTP $code"
+}
+
+json_value() {  # quote non-numeric/non-boolean values
+  case "$1" in
+    true|false|null) printf '%s' "$1" ;;
+    ''|*[!0-9.eE+-]*) printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+case "$cmd" in
+  status)   api GET /api/status ;;
+  list)     api GET /api/screens ;;
+  assets)   api GET /api/assets ;;
+  menu)     api POST /api/menu ;;
+  get)      api GET "/api/screens/${1:?id}" ;;
+  rm)       api DELETE "/api/screens/${1:?id}" ;;
+  put)      f="${1:?file}"; id="$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" | head -1)"
+            [ -n "$id" ] || die "no id in $f"
+            api PUT "/api/screens/$id" -H 'Content-Type: application/json' --data-binary "@$f" ;;
+  asset-put) f="${1:?file.bin}"; name="${2:-$(basename "$f")}"
+            api PUT "/api/assets/$name" -H 'Content-Type: application/octet-stream' --data-binary "@$f" ;;
+  asset-rm) api DELETE "/api/assets/${1:?name}" ;;
+  show)     api POST "/api/show/${1:?id}" ;;
+  brightness) api POST /api/brightness -H 'Content-Type: application/json' -d "{\"value\":${1:?0-100}}" ;;
+  data)     id="${1:?id}"; shift
+            if [ "${1:-}" = "-j" ]; then body="${2:?json}"
+            else
+              body="{"; sep=""
+              for kv in "$@"; do
+                k="${kv%%=*}"; v="${kv#*=}"; [ "$k" != "$kv" ] || die "expected key=value, got $kv"
+                body="$body$sep\"$k\":$(json_value "$v")"; sep=","
+              done
+              body="$body}"
+            fi
+            api POST "/api/data/$id" -H 'Content-Type: application/json' -d "$body" ;;
+  mqtt-config)
+            host="${1:?host}"; port="${2:-1883}"
+            body="{\"mqtt\":{\"host\":\"$host\",\"port\":$port"
+            [ -n "${3:-}" ] && body="$body,\"user\":\"$3\",\"password\":\"${4:-}\""
+            api PUT /api/config -H 'Content-Type: application/json' -d "$body}}" ;;
+  *) usage ;;
+esac

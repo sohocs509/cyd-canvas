@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cyd-canvas"
+version = "0.1.0.dev0"
+description = "Client library and CLI for cyd-canvas touchscreen displays"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.optional-dependencies]
+images = ["Pillow"]
+validate = ["jsonschema"]
+
+[project.scripts]
+cyd-canvas = "cyd_canvas.cli:main"
+
+[tool.setuptools]
+packages = ["cyd_canvas"]

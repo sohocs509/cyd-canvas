@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "id": "t04-arcs",
+  "title": "T04 arcs",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "arc",
+      "x": 8,
+      "y": 8,
+      "w": 90,
+      "h": 90,
+      "key": "g1",
+      "min": 0,
+      "max": 100,
+      "color": "#3fdc6c"
+    },
+    {
+      "type": "arc",
+      "x": 115,
+      "y": 8,
+      "w": 90,
+      "h": 90,
+      "key": "g2",
+      "min": 0,
+      "max": 100,
+      "color": "#4aa3ff"
+    },
+    {
+      "type": "arc",
+      "x": 8,
+      "y": 115,
+      "w": 110,
+      "h": 110,
+      "key": "g3",
+      "min": -50,
+      "max": 50,
+      "color": "#ffc400"
+    },
+    {
+      "type": "arc",
+      "x": 135,
+      "y": 115,
+      "w": 70,
+      "h": 70,
+      "key": "g4",
+      "min": 0,
+      "max": 10,
+      "color": "#ff4d4d"
+    }
+  ],
+  "thresholds": {
+    "g1": [
+      [
+        80,
+        "#ffc400"
+      ],
+      [
+        95,
+        "#ff4d4d"
+      ]
+    ]
+  }
+}

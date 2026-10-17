@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "id": "t12-no-data",
+  "title": "T12 before any data",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "value",
+      "x": 8,
+      "y": 8,
+      "key": "x",
+      "font": 32
+    },
+    {
+      "type": "bar",
+      "x": 8,
+      "y": 60,
+      "w": 250,
+      "h": 14,
+      "key": "x"
+    },
+    {
+      "type": "arc",
+      "x": 8,
+      "y": 90,
+      "w": 80,
+      "h": 80,
+      "key": "x"
+    },
+    {
+      "type": "led",
+      "x": 120,
+      "y": 110,
+      "key": "x"
+    },
+    {
+      "type": "chart",
+      "x": 150,
+      "y": 90,
+      "w": 160,
+      "h": 80,
+      "points": 20,
+      "min": 0,
+      "max": 100,
+      "series": [
+        {
+          "key": "x"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "x": 8,
+      "y": 180,
+      "w": 300,
+      "key": "x",
+      "cols": [
+        "a",
+        "b"
+      ],
+      "rows": 2
+    }
+  ]
+}

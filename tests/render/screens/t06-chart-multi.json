@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "id": "t06-chart-multi",
+  "title": "T06 multi-series",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "chart",
+      "x": 8,
+      "y": 8,
+      "w": 300,
+      "h": 110,
+      "points": 30,
+      "min": 0,
+      "max": 100,
+      "style": "line",
+      "series": [
+        {
+          "key": "s1",
+          "color": "#3fdc6c"
+        },
+        {
+          "key": "s2",
+          "color": "#4aa3ff"
+        },
+        {
+          "key": "s3",
+          "color": "#ffc400"
+        },
+        {
+          "key": "s4",
+          "color": "#ff4d4d"
+        }
+      ]
+    },
+    {
+      "type": "chart",
+      "x": 8,
+      "y": 128,
+      "w": 300,
+      "h": 100,
+      "points": 12,
+      "min": 0,
+      "max": 100,
+      "style": "bar",
+      "series": [
+        {
+          "key": "s1",
+          "color": "#3fdc6c"
+        }
+      ]
+    }
+  ]
+}

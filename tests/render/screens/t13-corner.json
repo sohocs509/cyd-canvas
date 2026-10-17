@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "id": "t13-corner",
+  "title": "T13 reserved corner",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "label",
+      "x": 8,
+      "y": 8,
+      "text": "A label under the X button area ->",
+      "font": 16
+    },
+    {
+      "type": "label",
+      "x": 280,
+      "y": 8,
+      "text": "UNDER",
+      "font": 12
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 100,
+      "text": "The X must stay visible and tappable.",
+      "font": 16
+    }
+  ]
+}

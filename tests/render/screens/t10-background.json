@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "t10-background",
+  "title": "T10 light background",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "label",
+      "x": 8,
+      "y": 8,
+      "text": "Dark text on light bg",
+      "font": 24,
+      "color": "#102a43"
+    },
+    {
+      "type": "value",
+      "x": 8,
+      "y": 50,
+      "key": "v",
+      "fmt": "%.1f",
+      "font": 32,
+      "color": "#b32424"
+    },
+    {
+      "type": "bar",
+      "x": 8,
+      "y": 110,
+      "w": 280,
+      "h": 18,
+      "key": "v",
+      "min": 0,
+      "max": 100,
+      "color": "#1f7a3a"
+    }
+  ],
+  "bg": "#f0f4f8"
+}

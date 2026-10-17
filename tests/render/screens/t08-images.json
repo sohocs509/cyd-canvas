@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "id": "t08-images",
+  "title": "T08 images",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "label",
+      "x": 8,
+      "y": 4,
+      "text": "opaque | alpha over blue | missing asset",
+      "font": 12
+    },
+    {
+      "type": "image",
+      "x": 8,
+      "y": 24,
+      "src": "t-gradient.bin"
+    },
+    {
+      "type": "image",
+      "x": 120,
+      "y": 24,
+      "src": "t-alpha.bin"
+    },
+    {
+      "type": "image",
+      "x": 240,
+      "y": 24,
+      "src": "does-not-exist.bin"
+    },
+    {
+      "type": "label",
+      "x": 240,
+      "y": 96,
+      "text": "<- nothing here",
+      "font": 12
+    }
+  ],
+  "bg": "#102a43"
+}

@@ -53,7 +53,7 @@
       "allOf": [{ "$ref": "#/$defs/base" }],
       "properties": {
         "type": { "const": "value" }, "key": { "$ref": "#/$defs/key" },
-        "fmt": { "type": "string", "maxLength": 16, "description": "printf-style, one numeric conversion, e.g. %.1f" },
+        "fmt": { "type": "string", "maxLength": 15, "pattern": "^[^%]*(%%[^%]*)*%[-+ 0#]*[0-9]{0,2}(\\.[0-9]{0,2})?[feEgG]([^%]*(%%[^%]*)*)$", "description": "printf-style with exactly one f/e/g conversion, e.g. %.1f. Anything else is replaced by %.1f on the device." },
         "unit": { "type": "string", "maxLength": 8 }, "font": { "enum": [12, 16, 24, 32] }
       },
       "required": ["key"]
