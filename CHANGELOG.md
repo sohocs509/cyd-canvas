@@ -14,4 +14,8 @@ versioning: [Semantic Versioning](https://semver.org/).
 - Self-maintenance: beyond `max_cards` / `min_free_mb` the device deletes cards lowest priority first, then least recently used; orphaned data and unused images are removed too.
 - On-screen ✕ back button and ACKNOWLEDGE button for critical cards.
 - Wi-Fi setup over Bluetooth (Improv Wi-Fi BLE) as a separate boot mode, with on-device ALLOW, menu/API entry and an automatic fallback; Web Bluetooth setup page (`web/setup.html`); `cyd-2432s028r-noble` build without Bluetooth.
+- Documentation set (`docs/`), Home Assistant integration design, OpenAPI spec, unit tests and CI.
+- Network picker in the Bluetooth setup page; paced Bluetooth notifications.
+- Home Assistant: the MQTT state message carries the slideshow state; state is published immediately on change; discovery templates are covered by a recorded test.
+- LVGL trimmed to the widgets in use (-90 KB flash).
 - Render test suite (`tests/render`) including id, overwrite and expiry checks.

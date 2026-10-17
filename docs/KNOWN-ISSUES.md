@@ -1,30 +1,30 @@
 # Known issues
 
-## Wi-Fi stops passing packets under sustained load: power supply (workaround found)
+Last reviewed 2026-10-17. Developed and tested on **one** ESP32-2432S028R.
 
-Seen on the first test unit (ESP32-2432S028R, USB-powered from a mini-PC port). After roughly one to
-three minutes of continuous back-to-back requests the device stays associated with the access point
-but stops moving packets: pings and new connections fail, and its own sockets log
-`write(): fail ... errno: 11` (send buffer full). The main loop and display keep running.
+## Open
 
-What has been ruled out or fixed on the way:
-
-| Finding | Fix |
+| Issue | Detail |
 |---|---|
-| TLS handshake needs two contiguous ~17 KB buffers; the heap fragments | private 48 KB mbedTLS pool reserved at boot (`src/tlsmem.cpp`) |
-| Two TLS sessions at once starve the Wi-Fi driver | `max_open_sockets = 1`; one connection at a time |
-| Server-forced socket close filled lwIP's TIME_WAIT table | clients close first; keep-alive allowed |
-| SD at 20 MHz dropped reads (cards vanished from the index) | 4 MHz plus read retries |
-| One shared write handle let an autosave truncate an upload | per-writer file handle |
-| Stalled uploads blocked the single server task forever | bounded body reads |
+| **Network list in the Wi-Fi setup page: delivery not re-verified** | The display scans correctly (8 networks found over USB). Delivering the list over Bluetooth was broken (results truncated) and was fixed by sending paced 20-byte chunks, but the fixed version has not yet been seen working on a phone or tablet. The page still works by typing the network name ("Other network") |
+| **Home Assistant controls not driven by a person** | Discovery, entity states and command templates are verified (see [HOME-ASSISTANT.md](HOME-ASSISTANT.md)); clicking the entities in Home Assistant's UI has not been checked |
+| **One SD-card dropout of unknown cause** | During a soak test on a PC USB port the board rebooted and the SD card stopped responding until it was reseated. The firmware now remounts by itself and logs the reset reason, so a recurrence will be explained |
+| **One HTTPS client at a time, about 2 s per new connection** | A design limit of the ESP32's RAM (TLS needs about 36 KB per session). Clients reuse a connection and retry; use MQTT for frequent data |
+| **MQTT is plaintext by default** | Configure a username and password, and TLS with a CA. An anonymous broker lets anyone on the network change the display |
+| **Flash is 88% full, no over-the-air update yet** | About 228 KB headroom in the 1.9 MB slot. The second slot is reserved for OTA |
+| **Improv over USB serial is not implemented** | Bluetooth only; the serial `wifi <ssid> <password>` console command is the fallback |
+| **Only one board is verified** | Other CYD revisions may need different display or touch settings ([HARDWARE.md](HARDWARE.md#board-variants)) |
+| **The light sensor can read 0** | Normal in room light on the test board; not treated as a fault |
 
-**Result so far:** the first test unit wedged within 1-3 minutes of load while powered from a mini-PC USB
-port. On a wall charger the same load ran without a single failure (first soak, see the project README for
-the latest figures). Treat a weak USB port, hub or long thin cable as the cause until shown otherwise: **power
-the board from a good 5 V / 1 A or better adapter.** The text below is kept for the record.
+## Resolved (kept for the record)
 
-Previously unresolved: the radio/TCP-IP wedge itself. Suspects, in order: USB power quality (Wi-Fi TX
-bursts plus backlight on a weak port or cable), then Wi-Fi driver buffer exhaustion. A self-check
-(`net::probe`) detects a dead link and reconnects/restarts, but it has not yet been seen to recover
-the unit. **To help:** run `python tests/render/run.py --slow` and report the board, power source and
-whether a different supply changes the result.
+| Was | Cause and fix |
+|---|---|
+| Wi-Fi went deaf within minutes of load | **Power**: weak USB port and cable. A wall adapter ran 4,000 requests with no failure. Documented in [HARDWARE.md](HARDWARE.md#power); transmit power lowered; reset reason recorded |
+| Intermittent TLS failures (`-0x7F00`) | Heap fragmentation; fixed with a private 48 KB TLS memory pool and one session at a time |
+| Cards vanished from the menu | SD at 20 MHz dropped reads; now 4 MHz with retries and auto-remount |
+| An upload could be truncated | A shared file handle between an upload and the background data save; now per-writer |
+| A second upload in quick succession was not indexed | The dirty flag was cleared after a rebuild; now cleared before |
+| Back button did not exist | It was never created in code; now created and verified on the display |
+| Slideshow switch showed "unknown" in Home Assistant | The MQTT state message lacked the field; fixed and covered by a test |
+| A hostile `fmt` string could corrupt memory | Only one floating-point conversion is accepted |
