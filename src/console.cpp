@@ -79,15 +79,16 @@ static void handle(String l) {
   } else if (cmd == "nettest") {
     Serial.printf("wifi status=%d rssi=%d ip=%s gw=%s mac=%s\n", (int)WiFi.status(), WiFi.RSSI(), WiFi.localIP().toString().c_str(),
                   WiFi.gatewayIP().toString().c_str(), WiFi.BSSIDstr().c_str());
-    const char* hosts[] = {"192.168.10.1", "192.168.10.137"};
-    int ports[] = {80, 1883};
-    for (int i = 0; i < 2; i++) {
-      WiFiClient c;
-      uint32_t t = millis();
-      bool ok = c.connect(hosts[i], ports[i], 3000);
-      Serial.printf("connect %s:%d -> %s in %lu ms\n", hosts[i], ports[i], ok ? "OK" : "FAIL", (unsigned long)(millis() - t));
-      c.stop();
-    }
+    // nettest [host port]: outbound TCP connects from the device itself (default: the router's port 80)
+    String host = WiFi.gatewayIP().toString();
+    int port = 80;
+    int sp = rest.indexOf(' ');
+    if (sp > 0) { host = rest.substring(0, sp); port = rest.substring(sp + 1).toInt(); }
+    WiFiClient c;
+    uint32_t t = millis();
+    bool ok = c.connect(host.c_str(), port, 3000);
+    Serial.printf("connect %s:%d -> %s in %lu ms\n", host.c_str(), port, ok ? "OK" : "FAIL", (unsigned long)(millis() - t));
+    c.stop();
   } else if (cmd == "heap") {
     Serial.printf("tls pool: free=%u largest=%u\n", (unsigned)tlsmem::freeBytes(), (unsigned)tlsmem::largestFree());
     Serial.printf("integrity=%s\n", heap_caps_check_integrity_all(true) ? "OK" : "CORRUPT");
