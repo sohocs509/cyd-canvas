@@ -79,7 +79,8 @@ static lv_obj_t* statusLbl = nullptr;
 static String statusText;
 static String pendingNav;     // "" none, "\x01" menu, otherwise screen id
 static bool navPending = false;
-static bool indexDirty = true;
+// NOTE: always clear indexDirty BEFORE rebuilding: an upload that sets it during a rebuild must stay flagged.
+static volatile bool indexDirty = true;
 static uint32_t lastPersist = 0;
 static lv_display_t* disp;
 static uint16_t dispBuf[SCREEN_W * 8];   // small render strip: RAM is scarcer than flush calls
@@ -573,7 +574,7 @@ static void navigate(const String& target) {
     curId = "\x02";
     curScr = buildInfo();
   } else if (target == "\x01") {
-    if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+    if (indexDirty) { indexDirty = false; rebuildIndexLocked(); }
     curId = "";
     curScr = buildMenu();
   } else {
@@ -666,8 +667,8 @@ void ui::loop() {
     navPending = false;
     navigate(pendingNav);
   } else if (indexDirty) {
-    rebuildIndexLocked();
     indexDirty = false;
+    rebuildIndexLocked();   // clear first: a PUT during the rebuild must stay flagged
     if (curId.isEmpty()) navigate("\x01");
   }
   checkAlerts();
@@ -739,7 +740,7 @@ bool ui::parseUtc(const char* s, int64_t& out) {
 
 static bool mergeData(const String& id, JsonObjectConst d, MergeMode mode) {
   LvGuard g;
-  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+  if (indexDirty) { indexDirty = false; rebuildIndexLocked(); }
   const Meta* m = nullptr;
   for (const Meta& x : metas) if (x.id == id) { m = &x; break; }
   if (!m) return false;
@@ -782,7 +783,7 @@ void ui::replaceData(const String& id, JsonObjectConst d) { mergeData(id, d, REP
 
 String ui::indexJson() {
   LvGuard g;
-  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+  if (indexDirty) { indexDirty = false; rebuildIndexLocked(); }
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
   for (const Meta& m : metas) {
@@ -798,7 +799,7 @@ String ui::indexJson() {
 
 static void sweepExpired() {
   if (!ui::clockValid()) return;
-  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+  if (indexDirty) { indexDirty = false; rebuildIndexLocked(); }
   int64_t now = time(nullptr);
   std::vector<String> dead;
   for (const Meta& m : metas) if (m.expires && now >= m.expires) dead.push_back(m.id);
@@ -854,7 +855,7 @@ void ui::cardUpdated(const String& id) {
 
 bool ui::ack(const String& id) {
   LvGuard g;
-  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+  if (indexDirty) { indexDirty = false; rebuildIndexLocked(); }
   bool any = false;
   for (const Meta& m : metas)
     if (m.prio == 3 && (id.isEmpty() || m.id == id) && !acked.count(m.id)) {
@@ -922,7 +923,7 @@ void ui::maintainSoon() { maintainFlag = true; maintainAt = millis() + 1500; }
 
 static void maintain() {
   if (!store::ready()) return;
-  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+  if (indexDirty) { indexDirty = false; rebuildIndexLocked(); }
   bool changed = false;
 
   // 1. keep within the card-count and free-space limits

@@ -79,6 +79,15 @@ def tiny(cid, title="x", **extra):
 
 def id_checks(c: Canvas):
     print("Card ids, overwrite and expiry rules")
+    # Regression: two uploads in quick succession must both reach the index (a rebuild used to swallow the 2nd flag)
+    c.put_screen(tiny("test/quick/one", "one"))
+    c.put_screen(tiny("test/quick/two", "two", priority="low"))
+    time.sleep(2.5)
+    idx_ids = {e["id"] for e in c.index()}
+    check("two back-to-back uploads are both indexed", {"test/quick/one", "test/quick/two"} <= idx_ids, str(sorted(i for i in idx_ids if "quick" in i)))
+    for q in ("test/quick/one", "test/quick/two"):
+        try: c.delete_screen(q)
+        except CanvasError: pass
     deep = "test/nested/deep/card"
     c.put_screen(tiny(deep, "deep v1"))
     check("4-segment path id stored", deep in c.screens())
