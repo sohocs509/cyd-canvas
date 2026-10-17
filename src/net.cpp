@@ -34,6 +34,7 @@ static void saveSlideshow();
 static String certPem, keyPem, certFp, certPin;
 static volatile uint32_t discoveryAfter = 0;
 static volatile bool provisionRequested = false;
+static volatile bool stateDirty = false;   // brightness or slideshow changed: tell Home Assistant now
 static volatile bool ntpChanged = false, wifiChanged = false, mqttChanged = false, discoveryDirty = true;
 
 static String nvsGet(Preferences& p, const char* k, const String& def = "") { return p.isKey(k) ? p.getString(k) : def; }
@@ -114,6 +115,7 @@ String net::tlsPin() { return certPin; }
 
 void net::setBrightness(int pct) {
   cfg.brightness = constrain(pct, 0, 100);
+  stateDirty = true;
   hal::backlight(cfg.brightness);
   Preferences p;
   p.begin("cyd", false);
@@ -232,7 +234,6 @@ static String statusJson() {
   d["screens"] = ui::screenCount();
   d["current"] = ui::current();
   d["brightness"] = cfg.brightness;
-  d["slideshow"] = cfg.ssOn ? "ON" : "OFF";
   d["ldr"] = hal::ldrRaw();
   d["mqtt"] = cfg.mqHost.isEmpty() ? "off" : "configured";
   extern const char* g_resetReason;
@@ -324,6 +325,7 @@ static esp_err_t putConfig(httpd_req_t* r) {
     if (w["dwell"].is<int>()) cfg.ssDwell = constrain((int)w["dwell"], 2, 600);
     if (w["prefix"].is<const char*>() && strlen(w["prefix"]) <= 32) cfg.ssPrefix = w["prefix"].as<String>();
     saveSlideshow();
+    stateDirty = true;
     ui::setSlideshow(cfg.ssOn, cfg.ssIdle, cfg.ssDwell, cfg.ssPrefix);
   }
   if (d["limits"].is<JsonObject>()) {
@@ -512,6 +514,7 @@ static void publishState() {
   JsonDocument d;
   d["screen"] = ui::current();
   d["brightness"] = cfg.brightness;
+  d["slideshow"] = cfg.ssOn ? "ON" : "OFF";
   d["ldr"] = hal::ldrRaw();
   d["rssi"] = WiFi.RSSI();
   d["heap"] = ESP.getFreeHeap();
@@ -657,7 +660,7 @@ static void mqttService() {
   }
   mqtt.loop();
   if (discoveryDirty && (int32_t)(millis() - discoveryAfter) >= 0) publishDiscovery();
-  if (ui::current() != lastScreen || millis() - lastState > 30000) publishState();
+  if (stateDirty || ui::current() != lastScreen || millis() - lastState > 30000) { stateDirty = false; publishState(); }
 }
 
 // A real network round trip, never answered from a cache: a DNS query for a name that cannot exist.
@@ -792,6 +795,7 @@ static void saveSlideshow() {
 
 void net::setSlideshow(bool on) {
   cfg.ssOn = on;
+  stateDirty = true;
   saveSlideshow();
   ui::setSlideshow(cfg.ssOn, cfg.ssIdle, cfg.ssDwell, cfg.ssPrefix);
 }

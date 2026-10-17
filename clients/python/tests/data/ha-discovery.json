@@ -1,0 +1,142 @@
+{
+ "discovery": {
+  "homeassistant/button/cyd-example/menu/config": {
+   "availability_topic": "cyd/cyd-example/status",
+   "command_topic": "cyd/cyd-example/cmd",
+   "device": {
+    "identifiers": [
+     "cyd-example"
+    ],
+    "manufacturer": "cyd-canvas",
+    "model": "ESP32-2432S028R",
+    "name": "cyd-example",
+    "sw_version": "0.1.0-dev"
+   },
+   "name": "Back to menu",
+   "payload_available": "online",
+   "payload_not_available": "offline",
+   "payload_press": "menu",
+   "unique_id": "cyd-example_menu"
+  },
+  "homeassistant/number/cyd-example/brightness/config": {
+   "availability_topic": "cyd/cyd-example/status",
+   "command_template": "brightness {{ value | int }}",
+   "command_topic": "cyd/cyd-example/cmd",
+   "device": {
+    "identifiers": [
+     "cyd-example"
+    ],
+    "manufacturer": "cyd-canvas",
+    "model": "ESP32-2432S028R",
+    "name": "cyd-example",
+    "sw_version": "0.1.0-dev"
+   },
+   "max": 100,
+   "min": 0,
+   "name": "Brightness",
+   "payload_available": "online",
+   "payload_not_available": "offline",
+   "state_topic": "cyd/cyd-example/state",
+   "step": 5,
+   "unique_id": "cyd-example_brightness",
+   "unit_of_measurement": "%",
+   "value_template": "{{ value_json.brightness }}"
+  },
+  "homeassistant/select/cyd-example/screen/config": {
+   "availability_topic": "cyd/cyd-example/status",
+   "command_template": "{% if value == 'menu' %}menu{% else %}show {{ value }}{% endif %}",
+   "command_topic": "cyd/cyd-example/cmd",
+   "device": {
+    "identifiers": [
+     "cyd-example"
+    ],
+    "manufacturer": "cyd-canvas",
+    "model": "ESP32-2432S028R",
+    "name": "cyd-example",
+    "sw_version": "0.1.0-dev"
+   },
+   "name": "Screen",
+   "options": [
+    "menu",
+    "host-health",
+    "services"
+   ],
+   "payload_available": "online",
+   "payload_not_available": "offline",
+   "state_topic": "cyd/cyd-example/state",
+   "unique_id": "cyd-example_screen",
+   "value_template": "{{ value_json.screen if value_json.screen else 'menu' }}"
+  },
+  "homeassistant/sensor/cyd-example/ldr/config": {
+   "availability_topic": "cyd/cyd-example/status",
+   "device": {
+    "identifiers": [
+     "cyd-example"
+    ],
+    "manufacturer": "cyd-canvas",
+    "model": "ESP32-2432S028R",
+    "name": "cyd-example",
+    "sw_version": "0.1.0-dev"
+   },
+   "name": "Light level",
+   "payload_available": "online",
+   "payload_not_available": "offline",
+   "state_class": "measurement",
+   "state_topic": "cyd/cyd-example/state",
+   "unique_id": "cyd-example_ldr",
+   "value_template": "{{ value_json.ldr }}"
+  },
+  "homeassistant/sensor/cyd-example/rssi/config": {
+   "availability_topic": "cyd/cyd-example/status",
+   "device": {
+    "identifiers": [
+     "cyd-example"
+    ],
+    "manufacturer": "cyd-canvas",
+    "model": "ESP32-2432S028R",
+    "name": "cyd-example",
+    "sw_version": "0.1.0-dev"
+   },
+   "device_class": "signal_strength",
+   "entity_category": "diagnostic",
+   "name": "Wi-Fi signal",
+   "payload_available": "online",
+   "payload_not_available": "offline",
+   "state_topic": "cyd/cyd-example/state",
+   "unique_id": "cyd-example_rssi",
+   "unit_of_measurement": "dBm",
+   "value_template": "{{ value_json.rssi }}"
+  },
+  "homeassistant/switch/cyd-example/slideshow/config": {
+   "availability_topic": "cyd/cyd-example/status",
+   "command_topic": "cyd/cyd-example/cmd",
+   "device": {
+    "identifiers": [
+     "cyd-example"
+    ],
+    "manufacturer": "cyd-canvas",
+    "model": "ESP32-2432S028R",
+    "name": "cyd-example",
+    "sw_version": "0.1.0-dev"
+   },
+   "name": "Slideshow",
+   "payload_available": "online",
+   "payload_not_available": "offline",
+   "payload_off": "slideshow off",
+   "payload_on": "slideshow on",
+   "state_off": "OFF",
+   "state_on": "ON",
+   "state_topic": "cyd/cyd-example/state",
+   "unique_id": "cyd-example_slideshow",
+   "value_template": "{{ value_json.slideshow }}"
+  }
+ },
+ "state": {
+  "brightness": 100,
+  "heap": 60616,
+  "ldr": 0,
+  "rssi": -31,
+  "screen": "",
+  "slideshow": "OFF"
+ }
+}
