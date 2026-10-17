@@ -1,0 +1,128 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cyd-canvas Wi-Fi setup</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#17202a; --mut:#5d6d7e; --acc:#1f6feb; --ok:#1a7f37; --bad:#c0392b; --card:#f4f6f8; --line:#d0d7de; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#10151b; --fg:#e8edf2; --mut:#9aa7b4; --acc:#58a6ff; --ok:#3fb950; --bad:#ff7b72; --card:#1a222b; --line:#2f3a46; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 34rem; margin: 0 auto; padding: 1.25rem 16px 3rem; }
+  h1 { font-size: 1.4rem; margin: .2rem 0 .2rem; }
+  p.sub { color: var(--mut); margin: 0 0 1.25rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; margin: 0 0 1rem; }
+  button { font: inherit; padding: .7rem 1.1rem; border-radius: 10px; border: 0; background: var(--acc); color: #fff; width: 100%; }
+  button:disabled { opacity: .45; }
+  label { display:block; margin:.6rem 0 .2rem; color: var(--mut); font-size: .9rem; }
+  input { font: inherit; width: 100%; box-sizing: border-box; padding: .6rem .7rem; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+  #state { font-weight: 600; } .ok { color: var(--ok); } .bad { color: var(--bad); }
+  ol { padding-left: 1.2rem; margin: .4rem 0; }
+  small { color: var(--mut); }
+  #log { white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; color: var(--mut); max-height: 9rem; overflow: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Set up your display's Wi-Fi</h1>
+  <p class="sub">Works with any cyd-canvas display in setup mode, using the <a href="https://www.improv-wifi.com/ble/">Improv Wi-Fi</a> Bluetooth standard. Needs Chrome on Android, Windows, macOS or ChromeOS.</p>
+
+  <div class="card">
+    <ol>
+      <li>On the display, open the menu, then <b>Wi-Fi setup (Bluetooth)</b> (a new display is already in setup).</li>
+      <li>Press <b>Find my display</b> and choose it in the list.</li>
+      <li>When asked, tap <b>ALLOW</b> on the display itself.</li>
+    </ol>
+    <button id="connect">Find my display</button>
+  </div>
+
+  <div class="card" id="status" hidden>
+    <div>Device: <b id="dev">-</b></div>
+    <div>Status: <span id="state">-</span></div>
+  </div>
+
+  <div class="card" id="form" hidden>
+    <label for="ssid">Wi-Fi network</label>
+    <input id="ssid" list="nets" autocomplete="off" autocapitalize="none" spellcheck="false">
+    <datalist id="nets"></datalist>
+    <label for="pass">Password</label>
+    <input id="pass" type="password" autocomplete="off">
+    <p><button id="send">Connect the display to this network</button></p>
+    <small>The password goes straight to the display over Bluetooth. It is not sent anywhere else.</small>
+  </div>
+
+  <div class="card"><div id="log"></div></div>
+</main>
+<script>
+const SVC = '00467768-6228-2272-4663-277478268000';
+const U = n => '00467768-6228-2272-4663-27747826800' + n;
+const STATES = {1:'Waiting for you to tap ALLOW on the display', 2:'Allowed. Choose your network', 3:'Connecting to Wi-Fi...', 4:'Connected!'};
+const ERRORS = {0:'', 1:'The display did not understand the request', 2:'Unknown command', 3:'Could not connect: check the network name and password', 4:'Not allowed yet: tap ALLOW on the display'};
+const $ = id => document.getElementById(id);
+let ch = {}, state = 0, rxBuf = [], scanning = false;
+const log = m => { $('log').textContent += m + '\n'; $('log').scrollTop = 1e9; };
+
+function setState(s) {
+  state = s;
+  $('state').textContent = STATES[s] || ('state ' + s);
+  $('state').className = s === 4 ? 'ok' : '';
+  $('form').hidden = !(s === 2);
+  if (s === 2 && !scanning && !$('nets').children.length) scan();
+}
+
+async function write(bytes) {                       // packets are split at the 20-byte default MTU
+  for (let i = 0; i < bytes.length; i += 20) await ch.cmd.writeValueWithResponse(bytes.slice(i, i + 20));
+}
+function packet(cmd, data) {
+  const p = [cmd, data.length, ...data];
+  p.push(p.reduce((a, b) => a + b, 0) & 255);
+  return new Uint8Array(p);
+}
+const enc = new TextEncoder(), dec = new TextDecoder();
+
+function onResult(ev) {
+  rxBuf.push(...new Uint8Array(ev.target.value.buffer));
+  while (rxBuf.length >= 3 && rxBuf.length >= rxBuf[1] + 3) {
+    const pkt = rxBuf.splice(0, rxBuf[1] + 3);
+    const sum = pkt.slice(0, -1).reduce((a, b) => a + b, 0) & 255;
+    if (sum !== pkt[pkt.length - 1]) { log('bad checksum from device'); continue; }
+    const strings = []; let i = 2;
+    while (i < pkt.length - 1) { const n = pkt[i++]; strings.push(dec.decode(new Uint8Array(pkt.slice(i, i + n)))); i += n; }
+    if (pkt[0] === 5) {                              // Wi-Fi scan result
+      if (strings.length === 0) { scanning = false; log('scan finished'); }
+      else { const o = document.createElement('option'); o.value = strings[0]; o.label = strings[0] + '  (' + strings[1] + ' dBm' + (strings[2] === 'NO' ? ', open' : '') + ')'; $('nets').appendChild(o); }
+    } else if (pkt[0] === 4) log('device: ' + strings.join(' / '));
+    else if (pkt[0] === 1) log('device accepted the Wi-Fi settings' + (strings[0] ? ' - ' + strings[0] : ''));
+  }
+}
+async function scan() { scanning = true; log('scanning for networks...'); await write(packet(5, [])); }
+
+$('connect').onclick = async () => {
+  try {
+    if (!navigator.bluetooth) { log('This browser has no Web Bluetooth. Use Chrome.'); return; }
+    const dev = await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC] }] });
+    $('status').hidden = false; $('dev').textContent = dev.name || dev.id;
+    log('connecting to ' + (dev.name || dev.id));
+    dev.addEventListener('gattserverdisconnected', () => { log('disconnected'); if (state !== 4) $('state').textContent = 'Disconnected'; });
+    const svc = await (await dev.gatt.connect()).getPrimaryService(SVC);
+    ch = { state: await svc.getCharacteristic(U(1)), err: await svc.getCharacteristic(U(2)), cmd: await svc.getCharacteristic(U(3)), res: await svc.getCharacteristic(U(4)) };
+    ch.state.addEventListener('characteristicvaluechanged', e => setState(e.target.value.getUint8(0)));
+    ch.err.addEventListener('characteristicvaluechanged', e => { const c = e.target.value.getUint8(0); if (c) { log('error: ' + (ERRORS[c] || c)); $('state').textContent = ERRORS[c] || ('error ' + c); $('state').className = 'bad'; } });
+    ch.res.addEventListener('characteristicvaluechanged', onResult);
+    await ch.state.startNotifications(); await ch.err.startNotifications(); await ch.res.startNotifications();
+    setState((await ch.state.readValue()).getUint8(0));
+    await write(packet(4, []));                      // ask for device info
+    log('connected');
+  } catch (e) { log('failed: ' + e); }
+};
+
+$('send').onclick = async () => {
+  const ssid = enc.encode($('ssid').value), pass = enc.encode($('pass').value);
+  if (!ssid.length) { log('enter the network name'); return; }
+  try { await write(packet(1, [ssid.length, ...ssid, pass.length, ...pass])); log('sent, waiting for the display...'); $('pass').value = ''; }
+  catch (e) { log('send failed: ' + e); }
+};
+</script>
+</body>
+</html>

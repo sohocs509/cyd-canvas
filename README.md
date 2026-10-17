@@ -14,8 +14,8 @@ XPT2046 touch, microSD). Other boards are welcome as build profiles.
 
 ## How it works
 
-1. Flash the firmware, then provision Wi-Fi over BLE ([Improv Wi-Fi](https://www.improv-wifi.com/)) or serial.
-   Nothing is baked into the firmware: no Wi-Fi credentials, broker, or API key.
+1. Flash the firmware, then set up Wi-Fi over Bluetooth ([Improv Wi-Fi](https://www.improv-wifi.com/ble/), see
+   [docs/WIFI-SETUP.md](docs/WIFI-SETUP.md)). Nothing is baked into the firmware: no Wi-Fi credentials, broker or API key.
 2. Upload **screens** (JSON, see [`schema/screen.schema.json`](schema/screen.schema.json))
    and **assets** (images) over HTTPS with an API key.
 3. Send **data** (`{"cpu": 42, "mem": 61}`) over HTTPS or MQTT. Widgets bind to data keys:

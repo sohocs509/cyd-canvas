@@ -4,6 +4,7 @@
 #include "hal.h"
 #include "dbg.h"
 #include "net.h"
+#include "provision.h"
 #include "store.h"
 #include <lvgl.h>
 #include <SD.h>
@@ -446,6 +447,7 @@ static void onSlideToggle(lv_event_t*) {
   net::setSlideshow(!ss.on);   // persists and updates the UI config
   ui::refreshIndex();          // rebuild the menu with the new label
 }
+static void onProvisionItem(lv_event_t*) { provision::requestAndRestart(); }
 static void onInfoItem(lv_event_t*) { pendingNav = "\x02"; navPending = true; }
 
 static lv_obj_t* buildInfo() {
@@ -555,6 +557,8 @@ static lv_obj_t* buildMenu() {
   lv_list_add_text(list, "System");
   lv_obj_t* sb = lv_list_add_button(list, LV_SYMBOL_PLAY, ss.on ? "Slideshow: on (tap to stop)" : "Slideshow: off (tap to start)");
   lv_obj_add_event_cb(sb, onSlideToggle, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* pb = lv_list_add_button(list, LV_SYMBOL_BLUETOOTH, "Wi-Fi setup (Bluetooth)");
+  lv_obj_add_event_cb(pb, onProvisionItem, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* ib = lv_list_add_button(list, LV_SYMBOL_SETTINGS, "Device info");
   lv_obj_add_event_cb(ib, onInfoItem, LV_EVENT_CLICKED, nullptr);
   statusLbl = lv_label_create(scr);

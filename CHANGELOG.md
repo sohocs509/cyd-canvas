@@ -13,4 +13,5 @@ versioning: [Semantic Versioning](https://semver.org/).
 - Slideshow mode (idle start, per-card `dwell`, touch stops it, critical interrupts), menu entry and Home Assistant switch.
 - Self-maintenance: beyond `max_cards` / `min_free_mb` the device deletes cards lowest priority first, then least recently used; orphaned data and unused images are removed too.
 - On-screen ✕ back button and ACKNOWLEDGE button for critical cards.
+- Wi-Fi setup over Bluetooth (Improv Wi-Fi BLE) as a separate boot mode, with on-device ALLOW, menu/API entry and an automatic fallback; Web Bluetooth setup page (`web/setup.html`); `cyd-2432s028r-noble` build without Bluetooth.
 - Render test suite (`tests/render`) including id, overwrite and expiry checks.

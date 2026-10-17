@@ -4,6 +4,7 @@
 #include "dbg.h"
 #include "hal.h"
 #include "store.h"
+#include "provision.h"
 #include "tls.h"
 #include "tlsmem.h"
 #include "ui.h"
@@ -32,6 +33,7 @@ static Cfg cfg;
 static void saveSlideshow();
 static String certPem, keyPem, certFp, certPin;
 static volatile uint32_t discoveryAfter = 0;
+static volatile bool provisionRequested = false;
 static volatile bool ntpChanged = false, wifiChanged = false, mqttChanged = false, discoveryDirty = true;
 
 static String nvsGet(Preferences& p, const char* k, const String& def = "") { return p.isKey(k) ? p.getString(k) : def; }
@@ -451,6 +453,10 @@ static esp_err_t api(httpd_req_t* r) {
     if (!id.isEmpty() && !store::validId(id)) return err(r, 400, "invalid screen id");
     return ui::ack(id) ? reply(r, 200, "{\"ok\":true}") : err(r, 404, "no unacknowledged critical card");
   }
+  if (a == "provision" && m == HTTP_POST) {
+    provisionRequested = true;       // the network task reboots into Bluetooth setup after this reply is sent
+    return reply(r, 200, "{\"ok\":true,\"note\":\"rebooting into Wi-Fi setup\"}");
+  }
   if (a == "menu" && m == HTTP_POST) { ui::showMenu(); return reply(r, 200, "{\"ok\":true}"); }
   if (a == "brightness" && m == HTTP_POST) {
     String body;
@@ -755,6 +761,17 @@ static void netTask(void*) {
             ESP.restart();
           }
         }
+      }
+    }
+    {
+      static uint32_t offlineSince = 0;
+      if (up || cfg.ssid.isEmpty()) offlineSince = 0;
+      else if (!offlineSince) offlineSince = millis() ? millis() : 1;
+      bool unreachable = offlineSince && millis() - offlineSince > 300000;     // saved network gone for 5 minutes
+      if (provisionRequested || unreachable) {
+        Serial.println(unreachable ? "net: saved Wi-Fi unreachable for 5 min, entering setup" : "net: setup requested");
+        vTaskDelay(pdMS_TO_TICKS(600));
+        provision::requestAndRestart(unreachable);
       }
     }
     ui::setStatusLine(net::statusLine());
