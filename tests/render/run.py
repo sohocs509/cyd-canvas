@@ -188,7 +188,8 @@ def slideshow_test(c: Canvas):
 def maintenance_test(c: Canvas):
     print("Housekeeping: lowest priority, oldest first")
     # Only low/high/critical test cards are used so the device's own (normal) cards can never be chosen.
-    base = len(c.screens())
+    before = set(c.screens())
+    base = len(before)
     ev0 = c.status()["evicted"]
     c.limits(max_cards=base + 2)
     order = [("test/mt/a", "low"), ("test/mt/b", "low"), ("test/mt/c", "high"), ("test/mt/d", "low"), ("test/mt/e", "critical")]
@@ -200,7 +201,7 @@ def maintenance_test(c: Canvas):
     check("high card kept over low ones", "test/mt/c" in left)
     check("unacknowledged critical card kept", "test/mt/e" in left)
     check("eviction counter moved by 3", c.status()["evicted"] - ev0 == 3, str(c.status()["evicted"] - ev0))
-    check("device's own cards untouched", all(x in c.screens() for x in ("host-health", "services")) or base == 0)
+    check("cards that were there before are untouched", before <= set(c.screens()))
     c.ack("test/mt/e")
     c.limits(max_cards=48)
     for cid in ("test/mt/c", "test/mt/e"):

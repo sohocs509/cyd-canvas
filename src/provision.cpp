@@ -93,8 +93,13 @@ static void sendResult(uint8_t cmd, const std::vector<String>& strings) {
   uint8_t sum = 0;
   for (char c : pkt) sum += (uint8_t)c;
   pkt.push_back((char)sum);
-  chResult->setValue((const uint8_t*)pkt.data(), pkt.size());
-  chResult->notify();
+  chResult->setValue((const uint8_t*)pkt.data(), pkt.size());     // readable copy for clients that poll
+  // Notify in 20-byte pieces (the smallest legal payload) with a short pause: a burst of long notifications
+  // overruns the controller's queue and arrives truncated. Clients reassemble by the length byte.
+  for (size_t i = 0; i < pkt.size(); i += 20) {
+    chResult->notify((const uint8_t*)pkt.data() + i, min((size_t)20, pkt.size() - i));
+    delay(25);
+  }
 }
 
 static void handlePacket(const std::string& p) {
@@ -251,6 +256,15 @@ void provision::run(const char* deviceName) {
         line.trim();
         if (line == "allow") { authUntil = millis() + 60000; setError(ERR_NONE); setState(ST_AUTHORIZED); Serial.println("authorized"); }
         else if (line == "reboot") ESP.restart();
+        else if (line == "scan") { scanJob = true; }
+        else if (line == "exit") {              // leave setup without changing the saved network
+          Preferences q;
+          q.begin("cyd", false);
+          q.putBool("prov", false);
+          q.end();
+          Serial.println("leaving setup");
+          ESP.restart();
+        }
         line = "";
       } else if (line.length() < 40) line += ch;
     }
@@ -267,6 +281,8 @@ void provision::run(const char* deviceName) {
       delay(100);
       int n = WiFi.scanNetworks(false, false, false, 300);
       Serial.printf("provision: scan found %d networks\n", n);
+      for (int i = 0; i < n && i < 15; i++)
+        Serial.printf("  net %d: %s (%d dBm)%s\n", i, WiFi.SSID(i).c_str(), (int)WiFi.RSSI(i), WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? " open" : "");
       for (int i = 0; i < n && i < 15; i++)
         sendResult(CMD_SCAN, {WiFi.SSID(i), String(WiFi.RSSI(i)), WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "NO" : "YES"});
       sendResult(CMD_SCAN, {});

@@ -15,6 +15,8 @@
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; margin: 0 0 1rem; }
   button { font: inherit; padding: .7rem 1.1rem; border-radius: 10px; border: 0; background: var(--acc); color: #fff; width: 100%; }
   button:disabled { opacity: .45; }
+  button.ghost { background: transparent; color: var(--acc); border: 1px solid var(--line); padding: .45rem .8rem; }
+  select { font: inherit; width: 100%; box-sizing: border-box; padding: .6rem .7rem; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
   label { display:block; margin:.6rem 0 .2rem; color: var(--mut); font-size: .9rem; }
   input { font: inherit; width: 100%; box-sizing: border-box; padding: .6rem .7rem; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
   #state { font-weight: 600; } .ok { color: var(--ok); } .bad { color: var(--bad); }
@@ -43,9 +45,10 @@
   </div>
 
   <div class="card" id="form" hidden>
-    <label for="ssid">Wi-Fi network</label>
-    <input id="ssid" list="nets" autocomplete="off" autocapitalize="none" spellcheck="false">
-    <datalist id="nets"></datalist>
+    <label for="netsel">Wi-Fi network</label>
+    <select id="netsel"><option value="" disabled selected>Scanning...</option></select>
+    <input id="ssid" hidden placeholder="Network name, exactly as spelled" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <p><button id="rescan" class="ghost">Scan again</button></p>
     <label for="pass">Password</label>
     <input id="pass" type="password" autocomplete="off">
     <p><button id="send">Connect the display to this network</button></p>
@@ -60,7 +63,7 @@ const U = n => '00467768-6228-2272-4663-27747826800' + n;
 const STATES = {1:'Waiting for you to tap ALLOW on the display', 2:'Allowed. Choose your network', 3:'Connecting to Wi-Fi...', 4:'Connected!'};
 const ERRORS = {0:'', 1:'The display did not understand the request', 2:'Unknown command', 3:'Could not connect: check the network name and password', 4:'Not allowed yet: tap ALLOW on the display'};
 const $ = id => document.getElementById(id);
-let ch = {}, state = 0, rxBuf = [], scanning = false;
+let ch = {}, state = 0, rxBuf = [], scanning = false, found = new Map();
 const log = m => { $('log').textContent += m + '\n'; $('log').scrollTop = 1e9; };
 
 function setState(s) {
@@ -68,7 +71,7 @@ function setState(s) {
   $('state').textContent = STATES[s] || ('state ' + s);
   $('state').className = s === 4 ? 'ok' : '';
   $('form').hidden = !(s === 2);
-  if (s === 2 && !scanning && !$('nets').children.length) scan();
+  if (s === 2 && !scanning && found.size === 0) scan();
 }
 
 async function write(bytes) {                       // packets are split at the 20-byte default MTU
@@ -90,13 +93,38 @@ function onResult(ev) {
     const strings = []; let i = 2;
     while (i < pkt.length - 1) { const n = pkt[i++]; strings.push(dec.decode(new Uint8Array(pkt.slice(i, i + n)))); i += n; }
     if (pkt[0] === 5) {                              // Wi-Fi scan result
-      if (strings.length === 0) { scanning = false; log('scan finished'); }
-      else { const o = document.createElement('option'); o.value = strings[0]; o.label = strings[0] + '  (' + strings[1] + ' dBm' + (strings[2] === 'NO' ? ', open' : '') + ')'; $('nets').appendChild(o); }
+      if (strings.length === 0) { scanning = false; log('scan finished: ' + found.size + ' networks'); renderNets(); }
+      else if (strings[0]) {
+        const rssi = parseInt(strings[1], 10), prev = found.get(strings[0]);
+        if (!prev || rssi > prev.rssi) found.set(strings[0], { rssi, open: strings[2] === 'NO' });   // keep the strongest access point per name
+      }
     } else if (pkt[0] === 4) log('device: ' + strings.join(' / '));
     else if (pkt[0] === 1) log('device accepted the Wi-Fi settings' + (strings[0] ? ' - ' + strings[0] : ''));
   }
 }
-async function scan() { scanning = true; log('scanning for networks...'); await write(packet(5, [])); }
+function renderNets() {
+  const sel = $('netsel'), keep = sel.value;
+  sel.innerHTML = '';
+  const bars = r => r >= -55 ? 'strong' : r >= -70 ? 'good' : 'weak';
+  [...found.entries()].sort((a, b) => b[1].rssi - a[1].rssi).forEach(([name, v]) => {
+    const o = document.createElement('option');
+    o.value = name; o.textContent = name + '  (' + bars(v.rssi) + (v.open ? ', open' : '') + ')';
+    sel.appendChild(o);
+  });
+  const other = document.createElement('option');
+  other.value = '__other'; other.textContent = 'Other network (type the name)...';
+  sel.appendChild(other);
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  $('ssid').hidden = sel.value !== '__other';
+}
+$('netsel').onchange = () => { $('ssid').hidden = $('netsel').value !== '__other'; if (!$('ssid').hidden) $('ssid').focus(); };
+async function scan() {
+  scanning = true; found = new Map();
+  $('netsel').innerHTML = '<option value="" disabled selected>Scanning...</option>';
+  log('scanning for networks...');
+  await write(packet(5, []));
+}
+$('rescan').onclick = () => { if (!scanning) scan().catch(e => log('scan failed: ' + e)); };
 
 $('connect').onclick = async () => {
   try {
@@ -118,8 +146,9 @@ $('connect').onclick = async () => {
 };
 
 $('send').onclick = async () => {
-  const ssid = enc.encode($('ssid').value), pass = enc.encode($('pass').value);
-  if (!ssid.length) { log('enter the network name'); return; }
+  const chosen = $('netsel').value === '__other' ? $('ssid').value : $('netsel').value;
+  const ssid = enc.encode(chosen), pass = enc.encode($('pass').value);
+  if (!ssid.length) { log('choose a network first'); return; }
   try { await write(packet(1, [ssid.length, ...ssid, pass.length, ...pass])); log('sent, waiting for the display...'); $('pass').value = ''; }
   catch (e) { log('send failed: ' + e); }
 };
