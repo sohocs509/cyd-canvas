@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t01-text",
+  "id": "test/t01-text",
   "title": "T01 text and fonts",
   "menu": "Render tests",
   "widgets": [

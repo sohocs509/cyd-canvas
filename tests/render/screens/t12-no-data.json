@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t12-no-data",
+  "id": "test/t12-no-data",
   "title": "T12 before any data",
   "menu": "Render tests",
   "widgets": [

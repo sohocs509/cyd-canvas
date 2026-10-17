@@ -59,7 +59,11 @@ def main(argv=None) -> int:
     sub.add_parser("status")
     sub.add_parser("list", help="list screens")
     s = sub.add_parser("get"); s.add_argument("id")
-    s = sub.add_parser("put", help="upload a screen JSON file"); s.add_argument("file")
+    sub.add_parser("index", help="list cards with title, menu group and expiry")
+    s = sub.add_parser("put", help="upload a card (same id replaces the older one)"); s.add_argument("file")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--expires", metavar="UTC", help="e.g. 2026-10-20T18:00:00Z")
+    g.add_argument("--ttl", metavar="DUR", help="delete after e.g. 90s 30m 6h 2d 1w")
     s = sub.add_parser("rm", help="delete a screen"); s.add_argument("id")
     s = sub.add_parser("validate", help="check a screen file against the schema"); s.add_argument("file")
 
@@ -109,7 +113,8 @@ def main(argv=None) -> int:
         if a.cmd == "status": res = c.status()
         elif a.cmd == "list": res = c.screens()
         elif a.cmd == "get": res = c.get_screen(a.id)
-        elif a.cmd == "put": res = c.put_screen(a.file)
+        elif a.cmd == "index": res = c.index()
+        elif a.cmd == "put": res = c.put_screen(a.file, expires=a.expires, ttl=a.ttl)
         elif a.cmd == "rm": res = c.delete_screen(a.id)
         elif a.cmd == "assets": res = c.assets()
         elif a.cmd == "asset-put":

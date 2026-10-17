@@ -16,4 +16,10 @@ void setStatusLine(const String& s);  // shown at the bottom of the menu
 bool applyData(const String& id, JsonObjectConst data);  // false if no such screen
 void forgetScreen(const String& id);  // drop cached data after delete
 size_t screenCount();
+String debugData(const String& id);  // what the device holds for a screen
+
+bool clockValid();                              // true once NTP has set the time
+bool parseUtc(const char* iso, int64_t& epoch); // "2026-10-20T18:00:00Z" only
+void replaceData(const String& id, JsonObjectConst data);  // embedded "data" of an uploaded screen
+String indexJson();                             // [{id,title,menu,expires}]  // what the device holds for a screen
 }

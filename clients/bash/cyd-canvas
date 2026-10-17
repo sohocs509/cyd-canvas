@@ -13,8 +13,10 @@ usage() {
   cat <<USAGE
 usage: cyd-canvas [-p profile] <command> [args]
   pair HOST [PIN]        save host, API key (read from stdin or prompt) and certificate pin
-  status | list | assets | menu
-  get ID | put FILE | rm ID
+  status | list | index | assets | menu
+  get ID | rm ID                 ids are paths, e.g. hosts/milo/health
+  put FILE [--ttl 6h | --expires 2026-10-20T18:00:00Z]
+                         same id replaces the older card; expired cards are deleted by the device
   asset-put FILE.bin [NAME] | asset-rm NAME
   data ID key=value ...  numbers/booleans sent as-is, anything else as a string
   data ID -j '{"json":1}'
@@ -77,13 +79,33 @@ json_value() {  # quote non-numeric/non-boolean values
 case "$cmd" in
   status)   api GET /api/status ;;
   list)     api GET /api/screens ;;
+  index)    api GET /api/index ;;
   assets)   api GET /api/assets ;;
   menu)     api POST /api/menu ;;
   get)      api GET "/api/screens/${1:?id}" ;;
   rm)       api DELETE "/api/screens/${1:?id}" ;;
-  put)      f="${1:?file}"; id="$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" | head -1)"
+  put)      f="${1:?file}"; shift; exp=""
+            while [ $# -gt 0 ]; do
+              case "$1" in
+                --expires) exp="${2:?UTC time}"; shift 2 ;;
+                --ttl) n="${2:?duration}"; shift 2
+                       case "$n" in
+                         *s) u=seconds ;; *m) u=minutes ;; *h) u=hours ;; *d) u=days ;; *w) u=weeks ;;
+                         *) die "bad ttl $n (use 90s 30m 6h 2d 1w)" ;;
+                       esac
+                       exp="$(date -u -d "now + ${n%?} $u" +%Y-%m-%dT%H:%M:%SZ)" ;;
+                *) die "unknown option $1" ;;
+              esac
+            done
+            id="$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" | head -1)"
             [ -n "$id" ] || die "no id in $f"
-            api PUT "/api/screens/$id" -H 'Content-Type: application/json' --data-binary "@$f" ;;
+            if [ -n "$exp" ]; then
+              grep -q '"expires"' "$f" && die "$f already has an expires field; remove it or drop the option"
+              body="$(sed '0,/{/s//{"expires":"'"$exp"'",/' "$f")"
+              api PUT "/api/screens/$id" -H 'Content-Type: application/json' --data-binary "$body"
+            else
+              api PUT "/api/screens/$id" -H 'Content-Type: application/json' --data-binary "@$f"
+            fi ;;
   asset-put) f="${1:?file.bin}"; name="${2:-$(basename "$f")}"
             api PUT "/api/assets/$name" -H 'Content-Type: application/octet-stream' --data-binary "@$f" ;;
   asset-rm) api DELETE "/api/assets/${1:?name}" ;;

@@ -8,9 +8,23 @@ import hmac
 import http.client
 import json
 import os
+import re
 import ssl
+import time
 from pathlib import Path
 from typing import Any, Optional, Union
+
+
+_TTL = re.compile(r"^(\d+)([smhdw])$")
+
+
+def expires_from_ttl(ttl: str) -> str:
+    """'90s', '30m', '6h', '2d', '1w' -> absolute UTC timestamp the device understands."""
+    m = _TTL.match(ttl.strip())
+    if not m:
+        raise ValueError(f"bad ttl {ttl!r}; use e.g. 90s, 30m, 6h, 2d, 1w")
+    secs = int(m.group(1)) * {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}[m.group(2)]
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + secs))
 
 
 class CanvasError(Exception):
@@ -141,9 +155,20 @@ class Canvas:
     def get_screen(self, sid: str) -> dict: return self._call("GET", f"/api/screens/{sid}")
     def delete_screen(self, sid: str) -> dict: return self._call("DELETE", f"/api/screens/{sid}")
 
-    def put_screen(self, screen: Union[dict, str, Path]) -> dict:
+    def index(self) -> list:
+        """[{id, title, menu, expires}] for every stored card."""
+        return self._call("GET", "/api/index")
+
+    def put_screen(self, screen: Union[dict, str, Path], *, expires: Optional[str] = None,
+                   ttl: Optional[str] = None) -> dict:
+        """Store a card. The id is a path (hosts/milo/health); the same id replaces the older card.
+        `expires` (UTC, 2026-10-20T18:00:00Z) or `ttl` (6h) make the device delete it later."""
         if isinstance(screen, (str, Path)):
             screen = json.loads(Path(screen).read_text())
+        if ttl:
+            expires = expires_from_ttl(ttl)
+        if expires:
+            screen = dict(screen, expires=expires)
         return self._call("PUT", f"/api/screens/{screen['id']}", screen)
 
     def assets(self) -> list: return self._call("GET", "/api/assets")

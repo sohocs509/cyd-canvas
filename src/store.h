@@ -13,7 +13,12 @@ struct Guard {
   ~Guard();
 };
 
+// Card ids are paths: 1-4 segments joined by '/', e.g. hosts/milo/health.
+// On the SD card they are stored flat, with '/' written as '~'.
 bool validId(const String& id);
+String screenPath(const String& id);   // /screens/hosts~milo~health.json
+String dataPath(const String& id);     // /data/hosts~milo~health.json
+std::vector<String> listScreenIds();
 bool validAssetName(const String& name);
 
 bool readFile(const String& path, String& out, size_t maxLen);

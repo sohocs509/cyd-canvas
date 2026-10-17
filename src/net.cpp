@@ -16,13 +16,14 @@
 struct Cfg {
   String name, ssid, pass, apikey;
   String mqHost, mqUser, mqPass, mqCa, mqPrefix, haPrefix = "homeassistant";
+  String ntp = "pool.ntp.org";
   int mqPort = 1883;
   bool mqTls = false;
   int brightness = 100;
 };
 static Cfg cfg;
 static String certPem, keyPem, certFp, certPin;
-static volatile bool wifiChanged = false, mqttChanged = false, discoveryDirty = true;
+static volatile bool ntpChanged = false, wifiChanged = false, mqttChanged = false, discoveryDirty = true;
 
 static String nvsGet(Preferences& p, const char* k, const String& def = "") { return p.isKey(k) ? p.getString(k) : def; }
 
@@ -52,6 +53,7 @@ static void loadCfg() {
   cfg.mqPrefix = nvsGet(p, "mq_pfx", "cyd/" + cfg.name);
   cfg.haPrefix = nvsGet(p, "ha_pfx", "homeassistant");
   cfg.brightness = p.getInt("bright", 100);
+  cfg.ntp = nvsGet(p, "ntp", "pool.ntp.org");
   certPem = nvsGet(p, "tls_crt");
   keyPem = nvsGet(p, "tls_key");
   certPin = nvsGet(p, "tls_pin");
@@ -208,6 +210,13 @@ static String statusJson() {
   d["brightness"] = cfg.brightness;
   d["ldr"] = hal::ldrRaw();
   d["mqtt"] = cfg.mqHost.isEmpty() ? "off" : "configured";
+  d["time_valid"] = ui::clockValid();
+  if (ui::clockValid()) {
+    time_t t = time(nullptr);
+    char b[24];
+    strftime(b, sizeof(b), "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
+    d["time_utc"] = b;
+  }
   String s;
   serializeJson(d, s);
   return s;
@@ -221,9 +230,16 @@ static esp_err_t putScreen(httpd_req_t* r, const String& id) {
   if (doc["schema"].as<int>() != 1) return err(r, 400, "schema must be 1");
   if (String(doc["id"] | "") != id) return err(r, 400, "id in body must match URL");
   if (!doc["widgets"].is<JsonArray>()) return err(r, 400, "widgets must be an array");
-  if (!store::writeFileAtomic("/screens/" + id + ".json", (const uint8_t*)body.c_str(), body.length()))
+  if (!doc["expires"].isNull()) {
+    int64_t exp;
+    if (!doc["expires"].is<const char*>() || !ui::parseUtc(doc["expires"], exp))
+      return err(r, 400, "expires must look like 2026-10-20T18:00:00Z (UTC)");
+    if (ui::clockValid() && exp <= time(nullptr)) return err(r, 400, "expires is already in the past");
+  }
+  if (!store::writeFileAtomic(store::screenPath(id), (const uint8_t*)body.c_str(), body.length()))
     return err(r, 500, "SD write failed");
   ui::refreshIndex();
+  if (doc["data"].is<JsonObject>()) ui::replaceData(id, doc["data"].as<JsonObjectConst>());
   net::screensChanged();
   return reply(r, 201, "{\"ok\":true}");
 }
@@ -254,6 +270,11 @@ static esp_err_t putConfig(httpd_req_t* r) {
   if (deserializeJson(d, body)) return err(r, 400, "invalid JSON");
   Preferences p;
   p.begin("cyd", false);
+  if (d["ntp"].is<const char*>() && strlen(d["ntp"]) > 0 && strlen(d["ntp"]) < 64) {
+    cfg.ntp = d["ntp"].as<String>();
+    p.putString("ntp", cfg.ntp);
+    ntpChanged = true;
+  }
   JsonObjectConst m = d["mqtt"];
   if (!m.isNull()) {
     if (m["host"].is<const char*>()) { cfg.mqHost = m["host"].as<String>(); p.putString("mq_host", cfg.mqHost); }
@@ -273,6 +294,7 @@ static esp_err_t putConfig(httpd_req_t* r) {
 static String configJson() {
   JsonDocument d;
   d["name"] = cfg.name;
+  d["ntp"] = cfg.ntp;
   d["mqtt"]["host"] = cfg.mqHost;
   d["mqtt"]["port"] = cfg.mqPort;
   d["mqtt"]["user"] = cfg.mqUser;
@@ -294,7 +316,8 @@ static esp_err_t api(httpd_req_t* r) {
   std::vector<String> s = split(path);  // ["api", ...]
   int m = r->method;
   String a = s.size() > 1 ? s[1] : "";
-  String id = s.size() > 2 ? s[2] : "";
+  String id;  // everything after /api/<route>/ (card ids contain slashes)
+  for (size_t i = 2; i < s.size(); i++) id += (i > 2 ? "/" : "") + s[i];
 
   if (a == "status" && m == HTTP_GET) return reply(r, 200, statusJson());
 
@@ -303,11 +326,13 @@ static esp_err_t api(httpd_req_t* r) {
     if (m == HTTP_PUT) return putConfig(r);
   }
 
+  if (a == "index" && m == HTTP_GET) return reply(r, 200, ui::indexJson());
+
   if (a == "screens") {
     if (id.isEmpty() && m == HTTP_GET) {
       JsonDocument d;
       JsonArray arr = d.to<JsonArray>();
-      for (auto& n : store::listNames("/screens", ".json")) arr.add(n);
+      for (auto& n : store::listScreenIds()) arr.add(n);
       String o;
       serializeJson(d, o);
       return reply(r, 200, o);
@@ -315,12 +340,12 @@ static esp_err_t api(httpd_req_t* r) {
     if (!store::validId(id)) return err(r, 400, "invalid screen id");
     if (m == HTTP_GET) {
       String t;
-      return store::readFile("/screens/" + id + ".json", t, MAX_SCREEN_BYTES) ? reply(r, 200, t) : err(r, 404, "no such screen");
+      return store::readFile(store::screenPath(id), t, MAX_SCREEN_BYTES) ? reply(r, 200, t) : err(r, 404, "no such screen");
     }
     if (m == HTTP_PUT) return putScreen(r, id);
     if (m == HTTP_DELETE) {
-      if (!store::removeFile("/screens/" + id + ".json")) return err(r, 404, "no such screen");
-      store::removeFile("/data/" + id + ".json");
+      if (!store::removeFile(store::screenPath(id))) return err(r, 404, "no such screen");
+      store::removeFile(store::dataPath(id));
       ui::forgetScreen(id);
       net::screensChanged();
       return reply(r, 200, "{\"ok\":true}");
@@ -442,7 +467,7 @@ static void publishDiscovery() {
   JsonArray opts = sel["options"].to<JsonArray>();
   opts.add("menu");
   int n = 0;
-  for (auto& id : store::listNames("/screens", ".json"))
+  for (auto& id : store::listScreenIds())
     if (n++ < 40) opts.add(id);
   device(sel);
   put("select", "screen", sel);
@@ -528,7 +553,7 @@ static void mqttService() {
     if (!ok) return;
     mqtt.publish(st.c_str(), "online", true);
     mqtt.subscribe((pfx() + "/cmd").c_str());
-    mqtt.subscribe((pfx() + "/data/+").c_str());
+    mqtt.subscribe((pfx() + "/data/#").c_str());
     discoveryDirty = true;
     Serial.println("net: mqtt connected");
   }
@@ -560,12 +585,14 @@ static void netTask(void*) {
     static bool wasUp = false;
     bool up = net::connected();
     if (up && !wasUp) {
+      configTime(0, 0, cfg.ntp.c_str(), "pool.ntp.org");
       MDNS.begin(cfg.name.c_str());
       MDNS.addService("https", "tcp", 443);
       startHttps();
       Serial.printf("net: up %s\n", WiFi.localIP().toString().c_str());
     }
     wasUp = up;
+    if (ntpChanged && up) { ntpChanged = false; configTime(0, 0, cfg.ntp.c_str(), "pool.ntp.org"); }
     ui::setStatusLine(net::statusLine());
     mqttService();
     vTaskDelay(pdMS_TO_TICKS(up ? 20 : 500));

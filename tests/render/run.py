@@ -67,6 +67,64 @@ def api_checks(c: Canvas):
     check("traversal id rejected", raw(c, "GET", "/api/screens/..%2f..%2fetc")[0] in (400, 404))
 
 
+def utc_in(seconds):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + seconds))
+
+
+def tiny(cid, title="x", **extra):
+    d = {"schema": 1, "id": cid, "title": title, "widgets": [{"type": "label", "x": 8, "y": 8, "text": title}]}
+    d.update(extra)
+    return d
+
+
+def id_checks(c: Canvas):
+    print("Card ids, overwrite and expiry rules")
+    deep = "test/nested/deep/card"
+    c.put_screen(tiny(deep, "deep v1"))
+    check("4-segment path id stored", deep in c.screens())
+    c.put_screen(tiny(deep, "deep v2"))
+    check("same id overwrites (one entry, new content)",
+          c.screens().count(deep) == 1 and c.get_screen(deep)["title"] == "deep v2")
+    idx = {e["id"]: e for e in c.index()}
+    check("menu group defaults to parent path", idx.get(deep, {}).get("menu") == "test/nested/deep", str(idx.get(deep)))
+    check("path id accepts data", c.data(deep, {"a": 1}) == {"ok": True})
+    c.delete_screen(deep)
+    check("path id deleted", deep not in c.screens())
+    for bad in ["test/a/b/c/d", "Test/Upper", "test//double", "/lead", "trail/", "test/a b"]:
+        body = json.dumps(tiny("x")).encode()
+        st, _ = raw(c, "PUT", "/api/screens/" + bad.replace(" ", "%20"), body)
+        check(f"bad id {bad!r} rejected", st in (400, 404), str(st))
+    st, _ = raw(c, "PUT", "/api/screens/test/exp-bad", json.dumps(tiny("test/exp-bad", expires="tomorrow")).encode())
+    check("malformed expires -> 400", st == 400, str(st))
+    if c.status().get("time_valid"):
+        st, _ = raw(c, "PUT", "/api/screens/test/exp-past", json.dumps(tiny("test/exp-past", expires=utc_in(-60))).encode())
+        check("expires in the past -> 400", st == 400, str(st))
+        check("device clock within 120 s of host", abs(time.mktime(time.strptime(c.status()["time_utc"], "%Y-%m-%dT%H:%M:%SZ")) - time.mktime(time.gmtime())) < 120)
+    else:
+        print("  [SKIP] clock not synced yet; expiry-in-past check skipped")
+
+
+def expiry_test(c: Canvas, man):
+    print("Expiry (slow)")
+    if not c.status().get("time_valid"):
+        check("device clock synced (NTP)", False, "time_valid is false")
+        return
+    cid = "test/t14-expiry"
+    screen = json.loads((HERE / "screens" / "t14-expiry.json").read_text())
+    screen["expires"] = utc_in(75)
+    c.put_screen(screen)
+    check("expiring card stored", cid in c.screens())
+    check("index shows its expiry", any(e["id"] == cid and e["expires"] for e in c.index()))
+    c.show(cid)
+    deadline = time.time() + 75 + 60
+    while time.time() < deadline and cid in c.screens():
+        time.sleep(5)
+    check("card deleted after expiry", cid not in c.screens())
+    st, _ = raw(c, "POST", f"/api/data/{cid}", b'{"n":2}')
+    check("data to expired card -> 404", st == 404, str(st))
+    check("device returned to the menu", c.status()["current"] == "", c.status()["current"])
+
+
 def drive(c: Canvas, case, step, hold, interactive, report):
     print(f"  expect: {step['expect']}")
     if "gen" in step:
@@ -95,6 +153,7 @@ def main():
     ap.add_argument("--interactive", action="store_true")
     ap.add_argument("--only", help="run only cases whose id starts with this")
     ap.add_argument("--hold", type=float, default=4.0, help="seconds to show each step")
+    ap.add_argument("--slow", action="store_true", help="include tests that wait (expiry)")
     ap.add_argument("--no-api", action="store_true", help="skip the API contract checks")
     ap.add_argument("--cleanup", action="store_true", help="delete the test screens/assets afterwards")
     a = ap.parse_args()
@@ -113,6 +172,7 @@ def main():
         check(f"{inv['file']} -> {inv['status']}", st == inv["status"], f"got {st} {txt[:80]}")
         check(f"{inv['id']} was not stored", inv["id"] not in c.screens())
 
+    id_checks(c)
     import tempfile
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)
@@ -123,16 +183,21 @@ def main():
 
     report = []
     for case in man["cases"]:
-        if a.only and not case["id"].startswith(a.only):
+        if a.only and a.only not in case["id"]:
+            continue
+        if case.get("slow") and not a.slow:
+            print(f"\n{case['id']}  (skipped: needs --slow)")
             continue
         print(f"\n{case['id']}")
-        c.put_screen(HERE / "screens" / f"{case['id']}.json")
+        c.put_screen(HERE / "screens" / f"{case['id'].split('/')[-1]}.json")
         c.show(case["id"])
         time.sleep(0.8)
         for step in case["steps"]:
             drive(c, case, step, a.hold, a.interactive, report)
         check(f"{case['id']} still stored", case["id"] in c.screens())
 
+    if a.slow:
+        expiry_test(c, man)
     st = c.status()
     check("device healthy at end (heap > 40 KB)", st["heap_free"] > 40000, str(st["heap_free"]))
     c.menu()

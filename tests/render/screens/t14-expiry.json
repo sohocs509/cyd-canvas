@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "id": "test/t14-expiry",
+  "title": "T14 expires",
+  "menu": "Render tests",
+  "widgets": [
+    {
+      "type": "label",
+      "x": 8,
+      "y": 8,
+      "text": "This card deletes itself",
+      "font": 24
+    },
+    {
+      "type": "label",
+      "x": 8,
+      "y": 50,
+      "text": "The runner sets expires = now + 75 s",
+      "font": 16
+    },
+    {
+      "type": "value",
+      "x": 8,
+      "y": 90,
+      "key": "n",
+      "fmt": "%.0f",
+      "font": 32
+    }
+  ],
+  "data": {
+    "n": 1
+  }
+}

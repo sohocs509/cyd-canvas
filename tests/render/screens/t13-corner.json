@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t13-corner",
+  "id": "test/t13-corner",
   "title": "T13 reserved corner",
   "menu": "Render tests",
   "widgets": [

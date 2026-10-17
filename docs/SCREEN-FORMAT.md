@@ -38,14 +38,30 @@ Machine-readable definition: [`schema/screen.schema.json`](../schema/screen.sche
 | Field | Required | Notes |
 |---|---|---|
 | `schema` | yes | must be `1` |
-| `id` | yes | `^[a-z0-9][a-z0-9_-]{0,31}$`; must equal the id in the URL/filename |
-| `title` | no | menu text, ≤ 32 chars; defaults to `id` |
-| `menu` | no | group heading in the menu (≤ 24 chars); screens without one list first |
+| `id` | yes | unique **path**, 1-4 segments joined by `/` (`hosts/milo/health`); each segment `[a-z0-9][a-z0-9_-]{0,31}`, whole id ≤ 64 chars. Must equal the id in the URL |
+| `title` | no | menu text, ≤ 32 chars; defaults to the last segment of the id |
+| `menu` | no | group heading in the menu (≤ 24 chars); defaults to the id's parent path (`hosts/milo`), so path ids group themselves |
+| `expires` | no | UTC time after which the device **deletes** the card, `2026-10-20T18:00:00Z`. No `expires` = keep forever |
+| `data` | no | readings stored with the card, same shape as a data message (section 2) |
 | `bg` | no | background colour, default black |
 | `widgets` | yes | up to 64, drawn in order |
 | `thresholds` | no | recolour a value by its reading, see below |
 
 File size limit: **16 KB**.
+
+### Identity, overwrite and expiry
+
+- **The id is the identity.** Uploading a card whose id already exists **replaces** it; there is
+  never more than one card per id (last write wins). Put the owner and purpose in the path:
+  `hosts/milo/health`, `backups/nightly`, `alerts/disk-full`.
+- **Expiry deletes.** When the device's clock passes `expires` it removes the card and its saved
+  data and, if the card is open, returns to the menu. Sweeps run about every 20 s.
+- **The clock comes from NTP over Wi-Fi.** Until it has synced (`time_valid` in `/api/status`)
+  nothing expires, so a reboot without network never wipes cards. A card whose `expires` is
+  already in the past is refused (HTTP 400) once the clock is valid. Re-uploading a card with a
+  later `expires` extends it.
+- Send relative lifetimes through the client (`--ttl 6h`); the device only understands absolute times.
+- A fresh `PUT` that includes `data` replaces all data stored for that id.
 
 ### Common widget fields
 
@@ -78,7 +94,11 @@ text and `bar`/`arc` indicators.
 
 ## 2. Data
 
-A flat JSON object. Keys must match the `key` in the widgets.
+A flat JSON object. Keys must match the `key` in the widgets. It reaches the card in two ways:
+**embedded** in the card's `"data"` field (a self-contained card: shows its content as soon as
+it is opened, survives reboots, needs no feeder), or **live** via `POST /api/data/<id>` / MQTT.
+Live readings layer on top of embedded ones. After a reboot embedded values only fill keys that
+have no saved reading.
 
 ```json
 { "cpu": 42.5, "mem": 61, "disk": 63, "up": true,
@@ -89,6 +109,7 @@ A flat JSON object. Keys must match the `key` in the widgets.
 |---|---|
 | number | `value`, `bar`, `arc`, `chart` (each send appends one point), `led` (> 0 = on) |
 | `true` / `false` | stored as 1 / 0 |
+| array of numbers | `chart` history (replaces the stored series, oldest first, last 240 kept); other widgets show the last number |
 | array of objects (keyed by `cols`) or array of arrays | `table` |
 
 Rules:
@@ -96,8 +117,9 @@ Rules:
 - Keys: letters, digits, `_ . -`, ≤ 32 chars. Body ≤ 8 KB.
 - **Partial updates are fine.** Send only what changed; other values keep their last reading.
 - Data only goes to an **existing** screen id — sending to an unknown id is rejected (HTTP 404).
-- Chart history lives in RAM (last 240 points per series) and starts empty after a reboot;
-  the latest value of every key survives reboots (saved to the SD card about once a minute).
+- Chart history lives in RAM (last 240 points per series); after a reboot it restarts from the
+  card's embedded history, if any. The latest value of every key survives reboots (saved to the
+  SD card about once a minute).
 - Send at a sensible rate: once every 5–60 s is typical. The display redraws at once.
 
 ## 3. Images
@@ -114,7 +136,7 @@ Upload as an asset, then reference the filename in an `image` widget.
 | Need | How |
 |---|---|
 | Upload/replace a screen, upload an image | HTTPS `PUT /api/screens/<id>`, `PUT /api/assets/<name>` |
-| Send data | HTTPS `POST /api/data/<id>` **or** MQTT `<prefix>/data/<id>` |
+| Send data | HTTPS `POST /api/data/<id>` **or** MQTT `<prefix>/data/<id>` (ids contain slashes: `cyd/<name>/data/hosts/milo/health`) |
 | Switch screen / brightness | `POST /api/show/<id>`, `/api/menu`, `/api/brightness` **or** MQTT `<prefix>/cmd` |
 
 HTTPS needs the header `X-Api-Key: <key>`. The key and the certificate pin are shown on the

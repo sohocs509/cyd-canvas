@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t09-led",
+  "id": "test/t09-led",
   "title": "T09 LEDs",
   "menu": "Render tests",
   "widgets": [
@@ -68,5 +68,10 @@
       "text": "no data: stays off",
       "font": 16
     }
-  ]
+  ],
+  "data": {
+    "l1": 1,
+    "l2": 0,
+    "l3": true
+  }
 }

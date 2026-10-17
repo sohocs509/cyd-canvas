@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t07-table",
+  "id": "test/t07-table",
   "title": "T07 table",
   "menu": "Render tests",
   "widgets": [
@@ -17,5 +17,24 @@
       ],
       "rows": 8
     }
-  ]
+  ],
+  "data": {
+    "rows": [
+      {
+        "name": "caddy",
+        "state": "ok",
+        "note": "443"
+      },
+      {
+        "name": "postgres",
+        "state": "ok",
+        "note": "5432"
+      },
+      {
+        "name": "mailscan",
+        "state": "degraded",
+        "note": "clamd slow"
+      }
+    ]
+  }
 }

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t10-background",
+  "id": "test/t10-background",
   "title": "T10 light background",
   "menu": "Render tests",
   "widgets": [
@@ -33,5 +33,8 @@
       "color": "#1f7a3a"
     }
   ],
-  "bg": "#f0f4f8"
+  "bg": "#f0f4f8",
+  "data": {
+    "v": 42.5
+  }
 }

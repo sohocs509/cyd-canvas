@@ -17,7 +17,7 @@ struct LvGuard {
   ~LvGuard() { xSemaphoreGiveRecursive(lvLock); }
 };
 
-struct Meta { String id, title, menu; std::vector<String> chartKeys; };
+struct Meta { String id, title, menu, expiresStr; std::vector<String> chartKeys; int64_t expires = 0; };
 static std::vector<Meta> metas;
 
 struct ScreenData {
@@ -46,6 +46,10 @@ struct Bind {
 static std::vector<Bind> binds;
 static std::map<String, std::vector<std::pair<double, lv_color_t>>> thresholds;
 
+enum MergeMode { MERGE, REPLACE, SEED };
+static bool mergeData(const String& id, JsonObjectConst d, MergeMode mode);
+
+static void sweepExpired();
 static String curId;          // "" = menu
 static lv_obj_t* curScr = nullptr;
 static lv_obj_t* statusLbl = nullptr;
@@ -168,7 +172,7 @@ static ScreenData& loadData(const String& id) {
   if (!sd.loaded) {
     sd.loaded = true;
     String txt;
-    if (store::readFile("/data/" + id + ".json", txt, 8192)) {
+    if (store::readFile(store::dataPath(id), txt, 8192)) {
       JsonDocument doc;
       if (!deserializeJson(doc, txt)) {
         for (JsonPair kv : doc.as<JsonObject>()) {
@@ -191,7 +195,7 @@ static void persist(const String& id) {
   }
   String out;
   serializeJson(doc, out);
-  store::writeFileAtomic("/data/" + id + ".json", (const uint8_t*)out.c_str(), out.length());
+  store::writeFileAtomic(store::dataPath(id), (const uint8_t*)out.c_str(), out.length());
   sd.dirty = false;
 }
 
@@ -430,18 +434,22 @@ static void onMenuItem(lv_event_t* e) {
 static void rebuildIndexLocked() {
   metas.clear();
   JsonDocument filter;
-  filter["id"] = true; filter["title"] = true; filter["menu"] = true;
+  filter["id"] = true; filter["title"] = true; filter["menu"] = true; filter["expires"] = true;
   filter["widgets"][0]["type"] = true;
   filter["widgets"][0]["series"][0]["key"] = true;
-  for (const String& id : store::listNames("/screens", ".json")) {
+  for (const String& id : store::listScreenIds()) {
     String txt;
-    if (!store::readFile("/screens/" + id + ".json", txt, MAX_SCREEN_BYTES)) continue;
+    if (!store::readFile(store::screenPath(id), txt, MAX_SCREEN_BYTES)) continue;
     JsonDocument doc;
     if (deserializeJson(doc, txt, DeserializationOption::Filter(filter))) continue;
     Meta m;
     m.id = id;
-    m.title = doc["title"] | id.c_str();
+    int slash = id.lastIndexOf('/');
+    m.title = doc["title"] | (slash < 0 ? id : id.substring(slash + 1)).c_str();
     m.menu = doc["menu"] | "";
+    if (m.menu.isEmpty() && slash > 0) m.menu = id.substring(0, slash);   // group by parent path
+    m.expiresStr = doc["expires"] | "";
+    if (!m.expiresStr.isEmpty() && !ui::parseUtc(m.expiresStr.c_str(), m.expires)) m.expires = 0;
     for (JsonObject w : doc["widgets"].as<JsonArray>())
       if (String(w["type"] | "") == "chart")
         for (JsonObject s : w["series"].as<JsonArray>()) m.chartKeys.push_back(String(s["key"] | ""));
@@ -506,11 +514,12 @@ static void navigate(const String& target) {
   } else {
     String txt;
     JsonDocument doc;
-    if (!store::readFile("/screens/" + target + ".json", txt, MAX_SCREEN_BYTES) || deserializeJson(doc, txt)) {
+    if (!store::readFile(store::screenPath(target), txt, MAX_SCREEN_BYTES) || deserializeJson(doc, txt)) {
       navigate("\x01");
       return;
     }
     loadData(target);
+    if (doc["data"].is<JsonObject>()) mergeData(target, doc["data"].as<JsonObjectConst>(), SEED);
     curId = target;
     curScr = buildScreen(target, doc);
     updateAll();
@@ -564,6 +573,11 @@ void ui::loop() {
   }
   static uint32_t lastInfo = 0;
   if (curId == "\x02" && millis() - lastInfo > 2000) { lastInfo = millis(); refreshInfo(); }
+  static uint32_t lastSweep = 0;
+  if (millis() - lastSweep > 20000 || (lastSweep == 0 && ui::clockValid())) {
+    lastSweep = millis() ? millis() : 1;
+    sweepExpired();
+  }
   if (millis() - lastPersist > 60000) {
     lastPersist = millis();
     for (auto& kv : data)
@@ -574,13 +588,21 @@ void ui::loop() {
 
 void ui::refreshIndex() { indexDirty = true; }
 bool ui::show(const String& id) {
-  if (!store::validId(id) || !store::exists("/screens/" + id + ".json")) return false;
+  if (!store::validId(id) || !store::exists(store::screenPath(id))) return false;
   pendingNav = id; navPending = true;
   return true;
 }
 void ui::showMenu() { pendingNav = "\x01"; navPending = true; }
 String ui::current() { return curId == "\x02" ? String("info") : curId; }
 size_t ui::screenCount() { return metas.size(); }
+String ui::debugData(const String& id) {
+  LvGuard g;
+  auto it = data.find(id);
+  if (it == data.end()) return "no data entry for " + id;
+  String s = "nums=" + String((unsigned)it->second.nums.size()) + " blobs=" + String((unsigned)it->second.blobs.size()) + " hist:";
+  for (auto& h : it->second.hist) s += " " + h.first + "=" + String((unsigned)h.second.size());
+  return s;
+}
 
 void ui::setStatusLine(const String& s) {
   LvGuard g;
@@ -595,21 +617,51 @@ void ui::forgetScreen(const String& id) {
   if (curId == id) { pendingNav = "\x01"; navPending = true; }
 }
 
-bool ui::applyData(const String& id, JsonObjectConst d) {
+bool ui::clockValid() { return time(nullptr) > 1700000000; }
+
+bool ui::parseUtc(const char* s, int64_t& out) {
+  int Y, M, D, h, m, sec;
+  char z = 0;
+  if (!s || strlen(s) != 20 || sscanf(s, "%4d-%2d-%2dT%2d:%2d:%2d%c", &Y, &M, &D, &h, &m, &sec, &z) != 7 || z != 'Z') return false;
+  if (Y < 2020 || Y > 2200 || M < 1 || M > 12 || D < 1 || D > 31 || h > 23 || m > 59 || sec > 60) return false;
+  int y = Y - (M <= 2);
+  int era = y / 400;
+  unsigned yoe = y - era * 400;
+  unsigned doy = (153 * (M + (M > 2 ? -3 : 9)) + 2) / 5 + D - 1;
+  unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  out = ((int64_t)era * 146097 + doe - 719468) * 86400 + h * 3600 + m * 60 + sec;
+  return true;
+}
+
+static bool mergeData(const String& id, JsonObjectConst d, MergeMode mode) {
   LvGuard g;
   if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
-  // chart keys for this screen, so history is only kept where it is used
   const Meta* m = nullptr;
   for (const Meta& x : metas) if (x.id == id) { m = &x; break; }
   if (!m) return false;
+  if (mode == REPLACE) { data[id] = ScreenData(); data[id].loaded = true; }
   ScreenData& sd = loadData(id);
+  auto isChartKey = [&](const String& k) { return std::find(m->chartKeys.begin(), m->chartKeys.end(), k) != m->chartKeys.end(); };
   for (JsonPairConst kv : d) {
     String k = kv.key().c_str();
     JsonVariantConst v = kv.value();
+    bool have = sd.nums.count(k) || sd.blobs.count(k) || (sd.hist.count(k) && !sd.hist[k].empty());
+    if (mode == SEED && have) continue;
+    if (v.is<JsonArrayConst>() && v.size() && v[0].is<double>()) {   // numeric series = chart history
+      if (isChartKey(k)) {
+        auto& h = sd.hist[k];
+        h.clear();
+        JsonArrayConst a = v.as<JsonArrayConst>();
+        size_t from = a.size() > 240 ? a.size() - 240 : 0;
+        for (size_t i = from; i < a.size(); i++) h.push_back(a[i].as<float>());
+      }
+      sd.nums[k] = v[v.size() - 1].as<double>();
+      continue;
+    }
     if (v.is<bool>()) sd.nums[k] = v.as<bool>() ? 1 : 0;
     else if (v.is<double>()) sd.nums[k] = v.as<double>();
     else { String s; serializeJson(v, s); sd.blobs[k] = s; continue; }
-    if (m && std::find(m->chartKeys.begin(), m->chartKeys.end(), k) != m->chartKeys.end()) {
+    if (mode != SEED && isChartKey(k)) {
       auto& h = sd.hist[k];
       h.push_back((float)sd.nums[k]);
       while (h.size() > 240) h.pop_front();
@@ -618,4 +670,39 @@ bool ui::applyData(const String& id, JsonObjectConst d) {
   sd.dirty = true;
   if (curId == id) updateAll();
   return true;
+}
+
+bool ui::applyData(const String& id, JsonObjectConst d) { return mergeData(id, d, MERGE); }
+void ui::replaceData(const String& id, JsonObjectConst d) { mergeData(id, d, REPLACE); }
+
+String ui::indexJson() {
+  LvGuard g;
+  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (const Meta& m : metas) {
+    JsonObject o = arr.add<JsonObject>();
+    o["id"] = m.id; o["title"] = m.title; o["menu"] = m.menu;
+    if (m.expiresStr.isEmpty()) o["expires"] = nullptr; else o["expires"] = m.expiresStr;
+  }
+  String s;
+  serializeJson(doc, s);
+  return s;
+}
+
+static void sweepExpired() {
+  if (!ui::clockValid()) return;
+  if (indexDirty) { rebuildIndexLocked(); indexDirty = false; }
+  int64_t now = time(nullptr);
+  std::vector<String> dead;
+  for (const Meta& m : metas) if (m.expires && now >= m.expires) dead.push_back(m.id);
+  for (const String& id : dead) {
+    store::removeFile(store::screenPath(id));
+    store::removeFile(store::dataPath(id));
+    data.erase(id);
+    if (curId == id) { pendingNav = "\x01"; navPending = true; }
+    indexDirty = true;
+    Serial.printf("expired: removed %s\n", id.c_str());
+  }
+  if (!dead.empty()) net::screensChanged();
 }

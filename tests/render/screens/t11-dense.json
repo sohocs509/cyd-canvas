@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t11-dense",
+  "id": "test/t11-dense",
   "title": "T11 64 widgets",
   "menu": "Render tests",
   "widgets": [

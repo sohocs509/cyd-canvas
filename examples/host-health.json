@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "host-health",
+  "id": "hosts/example/health",
   "title": "Host health",
   "menu": "Hosts",
   "widgets": [

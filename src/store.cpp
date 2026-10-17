@@ -26,13 +26,29 @@ bool store::begin() {
 }
 
 bool store::validId(const String& id) {
-  if (id.length() < 1 || id.length() > 32) return false;
+  if (id.length() < 1 || id.length() > 64) return false;
+  int segs = 1, segLen = 0;
   for (size_t i = 0; i < id.length(); i++) {
     char c = id[i];
-    bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (i > 0 && (c == '-' || c == '_'));
-    if (!ok) return false;
+    if (c == '/') {
+      if (segLen == 0 || ++segs > 4) return false;
+      segLen = 0;
+      continue;
+    }
+    bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (segLen > 0 && (c == '-' || c == '_'));
+    if (!ok || ++segLen > 32) return false;
   }
-  return true;
+  return segLen > 0;
+}
+
+static String flat(const String& id) { String s = id; s.replace('/', '~'); return s; }
+String store::screenPath(const String& id) { return "/screens/" + flat(id) + ".json"; }
+String store::dataPath(const String& id) { return "/data/" + flat(id) + ".json"; }
+
+std::vector<String> store::listScreenIds() {
+  std::vector<String> v = listNames("/screens", ".json");
+  for (String& s : v) s.replace('~', '/');
+  return v;
 }
 
 bool store::validAssetName(const String& n) {

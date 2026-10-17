@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t03-bar-thresholds",
+  "id": "test/t03-bar-thresholds",
   "title": "T03 bars",
   "menu": "Render tests",
   "widgets": [
@@ -187,5 +187,13 @@
         "#ff4d4d"
       ]
     ]
+  },
+  "data": {
+    "b1": 0,
+    "b2": 25,
+    "b3": 50,
+    "b4": 75,
+    "b5": 95,
+    "b6": 100
   }
 }

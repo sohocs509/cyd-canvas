@@ -27,7 +27,7 @@ static void handle(String l) {
     Serial.printf("heap=%u sd=%llu/%llu MB screens=%u\n", ESP.getFreeHeap(),
                   store::usedBytes() >> 20, store::totalBytes() >> 20, (unsigned)ui::screenCount());
   } else if (cmd == "ls") {
-    for (auto& n : store::listNames("/screens", ".json")) Serial.println(n);
+    for (auto& n : store::listScreenIds()) Serial.println(n);
   } else if (cmd == "put") {
     int s2 = rest.indexOf(' ');
     String id = s2 < 0 ? rest : rest.substring(0, s2);
@@ -37,7 +37,7 @@ static void handle(String l) {
       Serial.println("ERR bad id or json (id must match)");
       return;
     }
-    bool ok = store::writeFileAtomic("/screens/" + id + ".json", (const uint8_t*)body.c_str(), body.length());
+    bool ok = store::writeFileAtomic(store::screenPath(id), (const uint8_t*)body.c_str(), body.length());
     ui::refreshIndex();
     Serial.println(ok ? "OK" : "ERR write");
   } else if (cmd == "data") {
@@ -50,14 +50,16 @@ static void handle(String l) {
     }
     ui::applyData(id, doc.as<JsonObjectConst>());
     Serial.println("OK");
+  } else if (cmd == "dbg") {
+    Serial.println(ui::debugData(rest));
   } else if (cmd == "show") {
     Serial.println(ui::show(rest) ? "OK" : "ERR no such screen");
   } else if (cmd == "menu") {
     ui::showMenu();
     Serial.println("OK");
   } else if (cmd == "rm") {
-    bool ok = store::validId(rest) && store::removeFile("/screens/" + rest + ".json");
-    store::removeFile("/data/" + rest + ".json");
+    bool ok = store::validId(rest) && store::removeFile(store::screenPath(rest));
+    store::removeFile(store::dataPath(rest));
     ui::forgetScreen(rest);
     Serial.println(ok ? "OK" : "ERR");
   } else if (cmd == "wifi") {

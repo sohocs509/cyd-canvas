@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t04-arcs",
+  "id": "test/t04-arcs",
   "title": "T04 arcs",
   "menu": "Render tests",
   "widgets": [
@@ -60,5 +60,11 @@
         "#ff4d4d"
       ]
     ]
+  },
+  "data": {
+    "g1": 10,
+    "g2": 50,
+    "g3": 0,
+    "g4": 7
   }
 }

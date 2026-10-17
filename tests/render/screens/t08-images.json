@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "id": "t08-images",
+  "id": "test/t08-images",
   "title": "T08 images",
   "menu": "Render tests",
   "widgets": [
