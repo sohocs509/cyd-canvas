@@ -15,6 +15,23 @@ store::Guard::~Guard() { g_sdHolder = "-"; xSemaphoreGiveRecursive(lockH); }
 
 bool store::ready() { return mounted; }
 
+static int ioErrors = 0;
+static void ioFailed() {
+  if (++ioErrors >= 3) {                  // three failures in a row: the card is gone or wedged
+    Serial.println("store: repeated SD errors, marking the card unavailable");
+    SD.end();
+    mounted = false;
+    ioErrors = 0;
+  }
+}
+static void ioOk() { ioErrors = 0; }
+
+bool store::remount() {
+  if (!lockH) lockH = xSemaphoreCreateRecursiveMutex();
+  { Guard g; SD.end(); mounted = false; }
+  return begin();
+}
+
 bool store::begin() {
   if (!lockH) lockH = xSemaphoreCreateRecursiveMutex();
   Guard g;
@@ -22,6 +39,7 @@ bool store::begin() {
   // 4 MHz: the CYD's SD wiring drops reads at 20 MHz (cards vanished from the index). Our files are tiny.
   mounted = SD.begin(PIN_SD_CS, sdSpi, 4000000);
   if (!mounted) return false;
+  ioOk();
   for (const char* d : {"/screens", "/assets", "/data"})
     if (!SD.exists(d)) SD.mkdir(d);
   return true;
@@ -135,7 +153,7 @@ bool store::Writer::open(const String& finalPath) {
   tmp_ = finalPath + ".tmp";
   SD.remove(tmp_);
   f_ = SD.open(tmp_, FILE_WRITE);
-  if (!f_) return false;
+  if (!f_) { ioFailed(); return false; }
   open_ = true;
   written_ = 0;
   return true;
@@ -144,7 +162,7 @@ bool store::Writer::open(const String& finalPath) {
 bool store::Writer::write(const uint8_t* data, size_t len) {
   Guard g;
   if (!open_) return false;
-  if (f_.write(data, len) != len) return false;
+  if (f_.write(data, len) != len) { ioFailed(); return false; }
   written_ += len;
   return true;
 }
@@ -155,7 +173,8 @@ bool store::Writer::commit() {
   f_.close();
   open_ = false;
   SD.remove(fin_);
-  if (!SD.rename(tmp_, fin_)) { SD.remove(tmp_); return false; }
+  if (!SD.rename(tmp_, fin_)) { SD.remove(tmp_); ioFailed(); return false; }
+  ioOk();
   return true;
 }
 

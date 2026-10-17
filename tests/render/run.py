@@ -8,14 +8,19 @@ Without --interactive each step is shown for --hold seconds with its expectation
 with it you press Enter (ok) or type a note (problem) after each step and get a report.
 The API checks (auth, invalid input, unknown ids) are automatic and decide the exit code.
 """
-import argparse, calendar, http.client, json, math, os, ssl, struct, sys, time
+import argparse
+import calendar
+import json
+import math
+import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "clients" / "python"))
-from cyd_canvas import Canvas, CanvasError            # noqa: E402
-from cyd_canvas.client import _PinnedConnection        # noqa: E402
-from cyd_canvas.imaging import to_lvgl_bin            # noqa: E402
+from cyd_canvas import Canvas, CanvasError
+from cyd_canvas.client import _PinnedConnection
+from cyd_canvas.imaging import to_lvgl_bin
 
 failures = []
 

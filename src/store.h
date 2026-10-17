@@ -8,6 +8,7 @@
 namespace store {
 bool begin();
 bool ready();
+bool remount();                 // drop and re-initialise the card (after I/O errors or when it was missing)
 
 // Recursive lock around all SD access. Never take the UI lock while holding it.
 struct Guard {

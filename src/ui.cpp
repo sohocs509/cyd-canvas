@@ -673,6 +673,14 @@ void ui::loop() {
   }
   checkAlerts();
   slideshowTick();
+  {
+    // A missing/wedged card is retried every 10 s, so the display recovers by itself once it is back.
+    static uint32_t lastMount = 0;
+    if (!store::ready() && millis() - lastMount > 10000) {
+      lastMount = millis();
+      if (store::remount()) { Serial.println("store: SD card is back"); indexDirty = true; maintainSoon(); }
+    }
+  }
   static uint32_t lastInfo = 0;
   if (curId == "\x02" && millis() - lastInfo > 2000) { lastInfo = millis(); refreshInfo(); }
   static uint32_t lastSweep = 0;

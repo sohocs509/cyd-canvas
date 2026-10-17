@@ -233,6 +233,9 @@ static String statusJson() {
   d["slideshow"] = cfg.ssOn ? "ON" : "OFF";
   d["ldr"] = hal::ldrRaw();
   d["mqtt"] = cfg.mqHost.isEmpty() ? "off" : "configured";
+  extern const char* g_resetReason;
+  d["reset_reason"] = g_resetReason;
+  d["sd_ok"] = store::ready();
   d["alerts"] = ui::alertCount();
   d["evicted"] = ui::evictedTotal();
   d["sd_free_mb"] = (uint32_t)(store::freeBytes() >> 20);

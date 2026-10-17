@@ -6,7 +6,6 @@ import json
 import socket
 import ssl
 import struct
-from typing import Optional, Union
 
 
 def _utf(s: str) -> bytes:
@@ -23,9 +22,9 @@ def _remaining(n: int) -> bytes:
             return bytes(out)
 
 
-def publish(host: str, topic: str, payload: Union[str, bytes, dict], *, port: int = 1883,
-            username: Optional[str] = None, password: Optional[str] = None,
-            tls: bool = False, cafile: Optional[str] = None, retain: bool = False,
+def publish(host: str, topic: str, payload: str | bytes | dict, *, port: int = 1883,
+            username: str | None = None, password: str | None = None,
+            tls: bool = False, cafile: str | None = None, retain: bool = False,
             timeout: float = 5.0) -> None:
     if isinstance(payload, dict):
         payload = json.dumps(payload, separators=(",", ":"))

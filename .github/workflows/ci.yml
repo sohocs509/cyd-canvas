@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-cyd-2432s028r
+          path: .pio/build/cyd-2432s028r/firmware.bin
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pytest jsonschema pillow pyyaml openapi-spec-validator ruff
+      - run: pip install -e clients/python
+      - run: ruff check clients/python tests
+      - run: pytest clients/python/tests
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: shellcheck clients/bash/cyd-canvas

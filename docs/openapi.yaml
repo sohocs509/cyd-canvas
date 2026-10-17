@@ -1,0 +1,261 @@
+openapi: 3.1.0
+info:
+  title: cyd-canvas device API
+  version: 0.1.0
+  summary: HTTPS API of a cyd-canvas display.
+  description: |
+    Served by the device on port 443 with a self-signed certificate. Trust it by **pinning its public key**
+    (shown on the device under Device info as `sha256//…`), not by installing a CA.
+
+    The device serves **one client at a time**: a new connection replaces an idle one. Reuse the connection
+    (keep-alive); a TLS handshake takes about two seconds.
+
+    Card ids are paths (`hosts/milo/health`, up to four segments). Put them in the URL as-is; the `/` is not
+    percent-encoded.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: https://{host}
+    variables:
+      host: { default: cyd-abcdef.local }
+security:
+  - apiKey: []
+paths:
+  /api/status:
+    get:
+      operationId: getStatus
+      summary: Device health and what is showing now
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/config:
+    get:
+      operationId: getConfig
+      summary: Current settings (secrets are never returned)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Config" } } } }
+    put:
+      operationId: putConfig
+      summary: Change settings (any subset)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConfigUpdate" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/index:
+    get:
+      operationId: listCardsDetailed
+      summary: Every stored card with title, menu group, priority and expiry
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/IndexEntry" } }
+  /api/screens:
+    get:
+      operationId: listCards
+      summary: Ids of all stored cards
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { type: string } } } } }
+  /api/screens/{id}:
+    parameters: [ { $ref: "#/components/parameters/CardId" } ]
+    get:
+      operationId: getCard
+      responses:
+        "200": { description: The card as uploaded, content: { application/json: { schema: { $ref: "#/components/schemas/Card" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: putCard
+      summary: Store a card; the same id replaces the older card
+      description: |
+        Validated before it is stored. An embedded `data` object replaces everything stored for that id.
+        A critical card takes over the display immediately.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Card" } } }
+      responses:
+        "201": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "413": { description: Card larger than 16 KB }
+    delete:
+      operationId: deleteCard
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/data/{id}:
+    parameters: [ { $ref: "#/components/parameters/CardId" } ]
+    post:
+      operationId: sendData
+      summary: Send readings for a card
+      description: Partial updates are merged. Arrays of numbers set chart history; arrays of objects fill tables.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/assets:
+    get:
+      operationId: listAssets
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { type: string } } } } }
+  /api/assets/{name}:
+    parameters:
+      - { name: name, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9_.-]{1,32}\\.bin$" } }
+    put:
+      operationId: putAsset
+      summary: Upload an LVGL binary image (RGB565, optionally with alpha), up to 512 KB
+      requestBody:
+        required: true
+        content: { application/octet-stream: { schema: { type: string, format: binary } } }
+      responses:
+        "201": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "413": { description: Too large }
+    delete:
+      operationId: deleteAsset
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/show/{id}:
+    parameters: [ { $ref: "#/components/parameters/CardId" } ]
+    post:
+      operationId: showCard
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/menu:
+    post:
+      operationId: showMenu
+      description: Cannot dismiss an unacknowledged critical card.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+  /api/brightness:
+    post:
+      operationId: setBrightness
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [value], properties: { value: { type: integer, minimum: 0, maximum: 100 } } } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/ack:
+    post:
+      operationId: ackAll
+      summary: Acknowledge every critical card
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { description: Nothing to acknowledge }
+  /api/ack/{id}:
+    parameters: [ { $ref: "#/components/parameters/CardId" } ]
+    post:
+      operationId: ackCard
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { description: No unacknowledged critical card with that id }
+components:
+  securitySchemes:
+    apiKey: { type: apiKey, in: header, name: X-Api-Key, description: Generated on first boot; shown on the device. }
+  parameters:
+    CardId:
+      name: id
+      in: path
+      required: true
+      description: "Path-style card id such as hosts/milo/health. Send the slashes unencoded: the device matches everything after the route prefix (OpenAPI cannot express a path parameter that contains slashes)."
+      schema: { type: string, maxLength: 64, pattern: "^[a-z0-9][a-z0-9_-]{0,31}(/[a-z0-9][a-z0-9_-]{0,31}){0,3}$" }
+  responses:
+    Ok: { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } } }
+    Unauthorized: { description: Missing or wrong X-Api-Key }
+    BadRequest: { description: Rejected, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    NotFound: { description: No such card, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  schemas:
+    Card:
+      type: object
+      description: A card. The complete definition (widgets, thresholds, ...) is the JSON Schema in schema/screen.schema.json.
+      required: [schema, id, widgets]
+      properties:
+        schema: { const: 1 }
+        id: { type: string, maxLength: 64 }
+        title: { type: string, maxLength: 32 }
+        menu: { type: string, maxLength: 24 }
+        priority: { enum: [low, normal, high, critical], default: normal }
+        expires: { type: string, description: "UTC, e.g. 2026-10-20T18:00:00Z" }
+        dwell: { type: integer, minimum: 2, maximum: 120 }
+        bg: { type: string }
+        widgets: { type: array, maxItems: 64, items: { type: object } }
+        thresholds: { type: object }
+        data: { type: object }
+    Error: { type: object, properties: { error: { type: string } } }
+    Status:
+      type: object
+      properties:
+        name: { type: string }
+        version: { type: string }
+        uptime_s: { type: integer }
+        heap_free: { type: integer }
+        heap_largest: { type: integer }
+        tls_pool_free: { type: integer }
+        rssi: { type: integer }
+        sd_total_mb: { type: integer }
+        sd_used_mb: { type: integer }
+        sd_free_mb: { type: integer }
+        screens: { type: integer }
+        cards_max: { type: integer }
+        evicted: { type: integer, description: Cards deleted by housekeeping since boot }
+        current: { type: string, description: Id of the card on screen, empty for the menu }
+        alerts: { type: integer, description: Unacknowledged critical cards }
+        slideshow: { enum: [off, armed, running] }
+        brightness: { type: integer }
+        ldr: { type: integer }
+        mqtt: { enum: [off, configured] }
+        time_valid: { type: boolean }
+        time_utc: { type: string }
+    IndexEntry:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        menu: { type: string }
+        priority: { enum: [low, normal, high, critical] }
+        expires: { type: [string, "null"] }
+    Config:
+      type: object
+      properties:
+        name: { type: string }
+        ntp: { type: string }
+        limits: { $ref: "#/components/schemas/Limits" }
+        slideshow: { $ref: "#/components/schemas/Slideshow" }
+        mqtt: { type: object, additionalProperties: true }
+    ConfigUpdate:
+      type: object
+      properties:
+        ntp: { type: string, maxLength: 63 }
+        limits: { $ref: "#/components/schemas/Limits" }
+        slideshow: { $ref: "#/components/schemas/Slideshow" }
+        mqtt:
+          type: object
+          properties:
+            host: { type: string }
+            port: { type: integer }
+            user: { type: string }
+            password: { type: string, writeOnly: true }
+            tls: { type: boolean }
+            ca: { type: string, description: PEM; required when tls is true }
+            prefix: { type: string }
+            discovery_prefix: { type: string }
+    Limits:
+      type: object
+      properties:
+        max_cards: { type: integer, minimum: 4, maximum: 200, default: 48 }
+        min_free_mb: { type: integer, minimum: 1, maximum: 4096, default: 32 }
+    Slideshow:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        idle: { type: integer, minimum: 3, maximum: 3600, default: 30 }
+        dwell: { type: integer, minimum: 2, maximum: 600, default: 8 }
+        prefix: { type: string, maxLength: 32 }

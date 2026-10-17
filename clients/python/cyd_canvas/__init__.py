@@ -3,5 +3,5 @@
 from .client import Canvas, CanvasError, Profile, expires_from_ttl
 from .mqtt import publish as mqtt_publish
 
-__all__ = ["expires_from_ttl", "Canvas", "CanvasError", "Profile", "mqtt_publish"]
+__all__ = ["Canvas", "CanvasError", "Profile", "expires_from_ttl", "mqtt_publish"]
 __version__ = "0.1.0.dev0"

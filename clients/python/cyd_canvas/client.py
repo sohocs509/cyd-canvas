@@ -9,12 +9,10 @@ import http.client
 import json
 import os
 import re
-import socket
 import ssl
 import time
 from pathlib import Path
-from typing import Any, Optional, Union
-
+from typing import Any
 
 _TTL = re.compile(r"^(\d+)([smhdw])$")
 
@@ -29,7 +27,7 @@ def expires_from_ttl(ttl: str) -> str:
 
 
 class CanvasError(Exception):
-    def __init__(self, message: str, status: Optional[int] = None):
+    def __init__(self, message: str, status: int | None = None):
         super().__init__(message)
         self.status = status
 
@@ -112,7 +110,7 @@ class Profile:
 
 
 class Canvas:
-    def __init__(self, host: str, api_key: str, pin: Optional[str], port: int = 443, timeout: float = 10,
+    def __init__(self, host: str, api_key: str, pin: str | None, port: int = 443, timeout: float = 10,
                  keepalive: bool = True):
         self.host, self.api_key, self.pin, self.port, self.timeout = host, api_key, pin, port, timeout
         self.keepalive = keepalive
@@ -129,12 +127,12 @@ class Canvas:
     def __exit__(self, *exc): self.close()
 
     @classmethod
-    def from_profile(cls, name: str = "default") -> "Canvas":
+    def from_profile(cls, name: str = "default") -> Canvas:
         p = Profile(name).load()
         return cls(p["CYD_HOST"], p["CYD_KEY"], p.get("CYD_PIN"))
 
     # -- transport ---------------------------------------------------
-    def _call(self, method: str, path: str, body: Union[bytes, str, dict, list, None] = None) -> Any:
+    def _call(self, method: str, path: str, body: bytes | str | dict | list | None = None) -> Any:
         headers = {"X-Api-Key": self.api_key}
         data = None
         if body is not None:
@@ -152,7 +150,7 @@ class Canvas:
                 conn = _PinnedConnection(self.host, self.port, self.pin, self.timeout)
                 try:
                     conn.connect()
-                except (ConnectionError, ssl.SSLError, socket.timeout, TimeoutError):
+                except (ConnectionError, ssl.SSLError, TimeoutError):
                     conn.close()
                     if attempt == 4:
                         raise
@@ -166,7 +164,10 @@ class Canvas:
                 raw = resp.read()
             except (http.client.RemoteDisconnected, BrokenPipeError, ConnectionResetError, ssl.SSLError):
                 self.close()
-                if reused:          # stale kept-alive connection: nothing was processed, retry on a fresh one
+                # A stale kept-alive connection, or another client holding the device's single connection slot:
+                # nothing was processed, so retry on a fresh connection after a short pause.
+                if attempt < 4:
+                    time.sleep(0.4 * (attempt + 1))
                     continue
                 raise
             except Exception:
@@ -197,8 +198,8 @@ class Canvas:
         """[{id, title, menu, expires}] for every stored card."""
         return self._call("GET", "/api/index")
 
-    def put_screen(self, screen: Union[dict, str, Path], *, expires: Optional[str] = None,
-                   ttl: Optional[str] = None) -> dict:
+    def put_screen(self, screen: dict | str | Path, *, expires: str | None = None,
+                   ttl: str | None = None) -> dict:
         """Store a card. The id is a path (hosts/milo/health); the same id replaces the older card.
         `expires` (UTC, 2026-10-20T18:00:00Z) or `ttl` (6h) make the device delete it later."""
         if isinstance(screen, (str, Path)):
@@ -218,8 +219,8 @@ class Canvas:
     def set_config(self, **fields) -> dict:
         return self._call("PUT", "/api/config", fields)
 
-    def slideshow(self, enabled: bool, idle: Optional[int] = None, dwell: Optional[int] = None,
-                  prefix: Optional[str] = None) -> dict:
+    def slideshow(self, enabled: bool, idle: int | None = None, dwell: int | None = None,
+                  prefix: str | None = None) -> dict:
         """Start/stop the idle slideshow. idle/dwell in seconds; prefix limits it to ids starting with it."""
         w = {"enabled": bool(enabled)}
         if idle is not None: w["idle"] = idle
@@ -227,7 +228,7 @@ class Canvas:
         if prefix is not None: w["prefix"] = prefix
         return self.set_config(slideshow=w)
 
-    def limits(self, max_cards: Optional[int] = None, min_free_mb: Optional[int] = None) -> dict:
+    def limits(self, max_cards: int | None = None, min_free_mb: int | None = None) -> dict:
         """Housekeeping limits: beyond them the device deletes the lowest-priority, least-recently-used cards."""
         l = {}
         if max_cards is not None: l["max_cards"] = max_cards
