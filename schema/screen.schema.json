@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sohocs509/cyd-canvas/schema/screen.schema.json",
+  "title": "cyd-canvas screen",
+  "description": "A screen definition stored on the device's SD card at /screens/<id>.json.",
+  "type": "object",
+  "required": ["schema", "id", "widgets"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": 1, "description": "Screen format version." },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$" },
+    "title": { "type": "string", "maxLength": 32 },
+    "menu": { "type": "string", "maxLength": 24, "description": "Menu group this screen appears under." },
+    "bg": { "$ref": "#/$defs/color" },
+    "widgets": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/widget" } },
+    "thresholds": {
+      "type": "object",
+      "description": "Per data key: ascending [value, color] pairs; the last pair whose value <= the reading wins.",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "array", "prefixItems": [{ "type": "number" }, { "$ref": "#/$defs/color" }], "minItems": 2, "maxItems": 2 }
+      }
+    }
+  },
+  "$defs": {
+    "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+    "key": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,32}$" },
+    "base": {
+      "type": "object",
+      "required": ["type", "x", "y"],
+      "properties": {
+        "type": { "type": "string" },
+        "x": { "type": "integer", "minimum": 0, "maximum": 319 },
+        "y": { "type": "integer", "minimum": 0, "maximum": 319 },
+        "w": { "type": "integer", "minimum": 1, "maximum": 320 },
+        "h": { "type": "integer", "minimum": 1, "maximum": 320 },
+        "color": { "$ref": "#/$defs/color" }
+      }
+    },
+    "widget": {
+      "oneOf": [
+        { "$ref": "#/$defs/label" }, { "$ref": "#/$defs/value" }, { "$ref": "#/$defs/bar" },
+        { "$ref": "#/$defs/arc" }, { "$ref": "#/$defs/chart" }, { "$ref": "#/$defs/table" },
+        { "$ref": "#/$defs/image" }, { "$ref": "#/$defs/led" }
+      ]
+    },
+    "label": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": { "type": { "const": "label" }, "text": { "type": "string", "maxLength": 128 }, "font": { "enum": [12, 16, 24, 32] } },
+      "required": ["text"]
+    },
+    "value": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "value" }, "key": { "$ref": "#/$defs/key" },
+        "fmt": { "type": "string", "maxLength": 16, "description": "printf-style, one numeric conversion, e.g. %.1f" },
+        "unit": { "type": "string", "maxLength": 8 }, "font": { "enum": [12, 16, 24, 32] }
+      },
+      "required": ["key"]
+    },
+    "bar": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": { "type": { "const": "bar" }, "key": { "$ref": "#/$defs/key" }, "min": { "type": "number" }, "max": { "type": "number" } },
+      "required": ["key", "w", "h"]
+    },
+    "arc": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": { "type": { "const": "arc" }, "key": { "$ref": "#/$defs/key" }, "min": { "type": "number" }, "max": { "type": "number" } },
+      "required": ["key", "w", "h"]
+    },
+    "chart": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "chart" }, "points": { "type": "integer", "minimum": 2, "maximum": 240 },
+        "min": { "type": "number" }, "max": { "type": "number" },
+        "style": { "enum": ["line", "bar"] },
+        "series": {
+          "type": "array", "minItems": 1, "maxItems": 4,
+          "items": { "type": "object", "required": ["key"], "additionalProperties": false,
+                     "properties": { "key": { "$ref": "#/$defs/key" }, "color": { "$ref": "#/$defs/color" } } }
+        }
+      },
+      "required": ["w", "h", "series"]
+    },
+    "table": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "table" }, "key": { "$ref": "#/$defs/key" },
+        "cols": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 4 },
+        "rows": { "type": "integer", "minimum": 1, "maximum": 12 }
+      },
+      "required": ["key", "cols", "w"]
+    },
+    "image": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": { "type": { "const": "image" }, "src": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,32}\\.bin$", "description": "LVGL binary image in /assets/" } },
+      "required": ["src"]
+    },
+    "led": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": { "type": { "const": "led" }, "key": { "$ref": "#/$defs/key" } },
+      "required": ["key"]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "host-health",
+  "title": "Host health",
+  "menu": "Hosts",
+  "widgets": [
+    { "type": "label", "x": 8, "y": 6, "text": "CPU", "font": 16 },
+    { "type": "value", "x": 8, "y": 26, "key": "cpu", "fmt": "%.0f", "unit": "%", "font": 32 },
+    { "type": "arc", "x": 230, "y": 8, "w": 80, "h": 80, "key": "disk", "min": 0, "max": 100 },
+    { "type": "chart", "x": 8, "y": 100, "w": 304, "h": 120, "points": 60, "min": 0, "max": 100,
+      "series": [ { "key": "cpu", "color": "#3fdc6c" }, { "key": "mem", "color": "#4aa3ff" } ] }
+  ],
+  "thresholds": { "cpu": [ [80, "#ffc400"], [95, "#ff4d4d"] ] }
+}
