@@ -7,3 +7,6 @@ include/secrets.h
 *.key
 *.pem
 .env
+
+# the test fixtures include a throwaway public certificate
+!clients/python/tests/data/*.pem
