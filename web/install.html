@@ -14,6 +14,9 @@ This writes the firmware to the board; it does not touch the SD card.</p>
 <p class="warn"><strong>Untested pre-release.</strong> This build and this installer have not been run on hardware as a
 release. Installing writes the whole flash and <strong>erases the Wi-Fi, API key and pairing stored on the board</strong>.
 Use it on a spare board, or update with PlatformIO instead.</p>
+<p id="nobrowser" class="warn" hidden><strong>This browser can't flash.</strong> Firefox and Safari don't support Web Serial.
+Open this page in Chrome, Edge or another Chromium browser, on the computer the board is plugged into.</p>
+<script>if(!('serial' in navigator))document.getElementById('nobrowser').hidden=false;</script>
 <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
 <p>After flashing, set up Wi-Fi from <a href="setup.html">the Bluetooth setup page</a>.
 Firmware is Apache-2.0 with LGPL components; see THIRD-PARTY.md in the
