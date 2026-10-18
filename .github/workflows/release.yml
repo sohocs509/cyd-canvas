@@ -1,0 +1,55 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install platformio
+      - run: pio run
+      - name: Merge into one flashable image
+        run: |
+          B=.pio/build/cyd-2432s028r
+          A=$(ls -d ~/.platformio/packages/framework-arduinoespressif32*)
+          python3 ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32 merge_bin \
+            -o cyd-canvas-merged.bin --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000 $B/bootloader.bin 0x8000 $B/partitions.bin \
+            0xe000 $A/tools/partitions/boot_app0.bin 0x10000 $B/firmware.bin
+          cp $B/firmware.bin cyd-canvas-app.bin
+          sha256sum cyd-canvas-merged.bin cyd-canvas-app.bin > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-firmware
+          path: |
+            cyd-canvas-merged.bin
+            cyd-canvas-app.bin
+            SHA256SUMS
+      - name: Attach to the GitHub release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file RELEASE-NOTES.md
+          gh release upload "$GITHUB_REF_NAME" cyd-canvas-merged.bin cyd-canvas-app.bin SHA256SUMS --clobber
+      - name: Assemble the web flasher
+        run: |
+          mkdir -p site/firmware
+          cp web/install.html web/setup.html site/
+          cp cyd-canvas-merged.bin site/firmware/
+          sed "s/\"version\": \".*\"/\"version\": \"${GITHUB_REF_NAME#v}\"/" web/manifest.json > site/manifest.json
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site }
+  pages:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: { name: github-pages, url: "${{ steps.d.outputs.page_url }}" }
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4

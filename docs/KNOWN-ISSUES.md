@@ -1,13 +1,13 @@
 # Known issues
 
-Last reviewed 2026-10-17. Developed and tested on **one** ESP32-2432S028R.
+Last reviewed 2026-10-18. Developed and tested on **one** ESP32-2432S028R.
 
 ## Open
 
 | Issue | Detail |
 |---|---|
 | **Network list in the Wi-Fi setup page: delivery not re-verified** | The display scans correctly (8 networks found over USB). Delivering the list over Bluetooth was broken (results truncated) and was fixed by sending paced 20-byte chunks, but the fixed version has not yet been seen working on a phone or tablet. The page still works by typing the network name ("Other network") |
-| **Home Assistant controls not driven by a person** | Discovery, entity states and command templates are verified (see [HOME-ASSISTANT.md](HOME-ASSISTANT.md)); clicking the entities in Home Assistant's UI has not been checked |
+| **Home Assistant controls not clicked by a person** | Discovery, entity states and command templates are verified (see [HOME-ASSISTANT.md](HOME-ASSISTANT.md)). On 2026-10-18 every control (Screen, Brightness, Back to menu, Slideshow) was also driven through Home Assistant's service API and each change was confirmed on the device. Clicking the entities in the Home Assistant web UI has not been checked. One Screen selection returned HTTP 400 once and succeeded on retry; the cause (Home Assistant or the device) is unknown |
 | **One SD-card dropout of unknown cause** | During a soak test on a PC USB port the board rebooted and the SD card stopped responding until it was reseated. The firmware now remounts by itself and logs the reset reason, so a recurrence will be explained |
 | **One HTTPS client at a time, about 2 s per new connection** | A design limit of the ESP32's RAM (TLS needs about 36 KB per session). Clients reuse a connection and retry; use MQTT for frequent data |
 | **MQTT is plaintext by default** | Configure a username and password, and TLS with a CA. An anonymous broker lets anyone on the network change the display |

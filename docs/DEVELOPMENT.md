@@ -59,7 +59,7 @@ See [HARDWARE.md](HARDWARE.md#board-variants).
 
 1. Update `CHANGELOG.md` and `CYD_VERSION` in `src/net.h`.
 2. CI green; run the render suite (and `--slow`) on a board; a 15-minute soak on a wall adapter.
-3. Tag `vX.Y.Z`. Attach the firmware from CI. **Release notes must state that the firmware statically links the
+3. Tag `vX.Y.Z`. The `release` workflow builds the merged image, attaches it with `SHA256SUMS` to the GitHub release and publishes the web flasher (`web/install.html`) to GitHub Pages (Pages source must be set to GitHub Actions). **Release notes must state that the firmware statically links the
    LGPL-2.1 Arduino core** and link to the corresponding source (this repository at that tag). See
    [THIRD-PARTY.md](../THIRD-PARTY.md).
 

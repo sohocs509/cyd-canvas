@@ -11,6 +11,13 @@ From a box to your first card in about fifteen minutes.
 - A computer with [PlatformIO](https://platformio.org/) (to build and flash) and Python 3.9+ (for the client).
 - A phone, tablet or laptop with **Chrome** (for Wi-Fi setup over Bluetooth).
 
+## 0. Quick start: flash from the browser
+
+With Chrome or Edge, plug the board in by USB and open the install page (published with each release):
+https://sohocs509.github.io/cyd-canvas/install.html. This writes the whole firmware image and **erases the
+settings stored on the board**. Then set up Wi-Fi from the [Bluetooth setup page](WIFI-SETUP.md). To build from
+source or keep existing settings, continue below.
+
 ## 1. Build and flash
 
 ```sh
