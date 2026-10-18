@@ -84,6 +84,37 @@ unacknowledged critical card, the card on screen, or the card just uploaded. It 
 of deleted cards and images no card uses (after 10 minutes). Check `evicted` in `GET /api/status`; change the
 limits with `cyd-canvas limits --max-cards 60`. Give cards you want to keep a higher `priority`.
 
+### Sources: the display fetches its own data
+
+A card can say where its values come from, so nothing has to push them. The display subscribes to the MQTT
+topics for you and updates the card as messages arrive (see [design/info-hub.md](design/info-hub.md)).
+
+```json
+"sources": [
+  { "type": "mqtt", "topic": "lab/web/health", "path": "status", "key": "web_ok",
+    "map": { "ok": 1, "degraded": 0, "down": 0 }, "max_age": 300 },
+  { "type": "mqtt", "topic": "lab/room/temperature", "path": "celsius", "key": "temp",
+    "scale": 1.8, "offset": 32, "max_age": 600 },
+  { "type": "mqtt", "topic": "lab/service/+/state", "path": "state", "table": "services",
+    "row": { "name": "{2}", "state": "$" }, "max_age": 300 }
+]
+```
+
+| Field | Meaning |
+|---|---|
+| `type` | `mqtt` (`http` polling is planned) |
+| `topic` | topic filter; `+` and `#` allowed |
+| `path` | where the value is in a JSON payload: `a.b[0].c`. Leave out for a payload that is just a number or text |
+| `key` | data key to set. `{n}` is the n-th level of the actual topic (0-based) |
+| `map` | string to number, so `"degraded"` can drive an LED, a bar or a colour threshold |
+| `scale`, `offset` | `value * scale + offset` (not applied to mapped values) |
+| `table` + `row` | fill a table instead: one row per matching topic; each column is an expression (`{n}` = topic level, `$` = the value). Up to 12 rows |
+| `max_age` | seconds. After that the value is **stale**: a number shows `--`, bars, arcs and LEDs go grey, table rows are dropped. Stale data must look stale. After a reboot, restored values count as stale until a message arrives |
+
+Limits: 16 sources per card, 24 distinct topics on the display, payloads up to about 2 KB, JSON paths up to five levels.
+Read what the display currently holds (and how old each value is) with `GET /api/data/<id>` or
+`cyd-canvas`'s `get_data`.
+
 ### Identity, overwrite and expiry
 
 - **The id is the identity.** Uploading a card whose id already exists **replaces** it; there is

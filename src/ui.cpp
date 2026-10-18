@@ -5,6 +5,7 @@
 #include "dbg.h"
 #include "net.h"
 #include "provision.h"
+#include "sources.h"
 #include "store.h"
 #include <lvgl.h>
 #include <SD.h>
@@ -21,13 +22,14 @@ struct LvGuard {
   ~LvGuard() { g_lvHolder = "-"; xSemaphoreGiveRecursive(lvLock); }
 };
 
-struct Meta { std::vector<String> assets; int64_t mtime = 0; uint8_t dwell = 0; uint8_t prio = 1; String id, title, menu, expiresStr; std::vector<String> chartKeys; int64_t expires = 0; };
+struct Meta { std::vector<SourceDef> sources; std::vector<String> assets; int64_t mtime = 0; uint8_t dwell = 0; uint8_t prio = 1; String id, title, menu, expiresStr; std::vector<String> chartKeys; int64_t expires = 0; };
 static std::vector<Meta> metas;
 
 struct ScreenData {
   std::map<String, double> nums;
   std::map<String, String> blobs;                // arrays/objects/strings as JSON text
   std::map<String, std::deque<float>> hist;      // chart keys only
+  std::map<String, uint32_t> seen;               // millis() of the last update of each key (freshness)
   bool dirty = false;
   bool loaded = false;
 };
@@ -44,6 +46,7 @@ struct Bind {
   std::vector<lv_chart_series_t*> ser;
   std::vector<String> serKeys;
   int points = 60;
+  uint32_t maxAge = 0;                      // seconds; from the card's sources, 0 = never stale
   std::vector<String> cols;
   int rows = 6;
 };
@@ -55,7 +58,7 @@ static bool mergeData(const String& id, JsonObjectConst d, MergeMode mode);
 
 struct SlideCfg { bool on = false; int idle = 30, dwell = 8; String prefix; };
 static SlideCfg ss;
-static uint32_t lastInput = 0, ssNextAt = 0;
+static uint32_t lastInput = 0, ssNextAt = 0, lastAgingRefresh = 0;
 static bool ssActive = false;
 static size_t ssCursor = 0;
 static void slideshowTick();
@@ -74,6 +77,7 @@ static void markUsed(const String& id) {
 }
 static void sweepExpired();
 static void checkAlerts();
+static bool curAging = false;     // the open card has values that can go stale
 static String curId;          // "" = menu
 static lv_obj_t* curScr = nullptr;
 static lv_obj_t* statusLbl = nullptr;
@@ -231,10 +235,20 @@ static void updateBind(Bind& b, ScreenData& sd) {
   auto n = sd.nums.find(b.key);
   bool have = n != sd.nums.end();
   double v = have ? n->second : 0;
-  lv_color_t col = thresholdColor(b.key, v, b.base);
+  bool stale = false;
+  if (b.maxAge) {
+    auto sn = sd.seen.find(b.key);
+    stale = sn == sd.seen.end() || (uint32_t)(millis() - sn->second) > b.maxAge * 1000UL;   // never updated since boot counts as stale
+  }
+  const lv_color_t grey = lv_color_hex(0x666666);
+  lv_color_t col = stale ? grey : thresholdColor(b.key, v, b.base);
   switch (b.kind) {
     case K_VALUE: {
-      if (!have) { lv_label_set_text(b.obj, "--"); break; }
+      if (!have || stale) {
+        lv_label_set_text(b.obj, "--");
+        if (stale) lv_obj_set_style_text_color(b.obj, grey, 0);
+        break;
+      }
       char buf[48], num[32];
       snprintf(num, sizeof(num), b.fmt.c_str(), v);
       snprintf(buf, sizeof(buf), "%s%s", num, b.unit.c_str());
@@ -251,12 +265,12 @@ static void updateBind(Bind& b, ScreenData& sd) {
         lv_arc_set_value(b.obj, (int32_t)(v * 100));
         char buf[16];
         snprintf(buf, sizeof(buf), "%.0f", v);
-        lv_label_set_text(b.aux, buf);
+        lv_label_set_text(b.aux, stale ? "--" : buf);
       }
       lv_obj_set_style_arc_color(b.obj, col, LV_PART_INDICATOR);
       break;
     case K_LED:
-      if (v > 0) lv_led_on(b.obj); else lv_led_off(b.obj);
+      if (!stale && v > 0) lv_led_on(b.obj); else lv_led_off(b.obj);
       break;
     case K_CHART:
       for (size_t i = 0; i < b.ser.size(); i++) {
@@ -272,6 +286,11 @@ static void updateBind(Bind& b, ScreenData& sd) {
     case K_TABLE: {
       auto bl = sd.blobs.find(b.key);
       if (bl == sd.blobs.end()) break;
+      if (stale) {                                            // old rows must not pass for current ones
+        for (int r = 0; r < b.rows; r++)
+          for (size_t c = 0; c < b.cols.size(); c++) lv_table_set_cell_value(b.obj, r, c, "");
+        break;
+      }
       JsonDocument doc;
       if (deserializeJson(doc, bl->second)) break;
       JsonArray rowsArr = doc.as<JsonArray>();
@@ -344,12 +363,20 @@ static lv_obj_t* buildScreen(const String& id, JsonDocument& doc) {
       vec.push_back({p[0].as<double>(), parseColor(p[1] | "#ffffff", lv_color_white())});
   }
 
+  std::map<String, uint32_t> ageFor;                      // data key -> max_age seconds, from the card's sources
+  for (JsonObjectConst so : doc["sources"].as<JsonArrayConst>()) {
+    String k = String(so["key"] | so["table"] | "");
+    uint32_t a = so["max_age"] | 0;
+    if (!k.isEmpty() && k.indexOf('{') < 0 && a) ageFor[k] = a;
+  }
+  curAging = false;
   for (JsonObjectConst w : doc["widgets"].as<JsonArrayConst>()) {
     String type = w["type"] | "";
     lv_color_t col = parseColor(w["color"] | "#ffffff", lv_color_white());
     Bind b;
     b.key = w["key"] | "";
     b.base = col;
+    { auto it = ageFor.find(b.key); if (it != ageFor.end()) { b.maxAge = it->second; curAging = true; } }
     b.mn = w["min"] | 0.0;
     b.mx = w["max"] | 100.0;
 
@@ -481,11 +508,15 @@ static void onMenuItem(lv_event_t* e) {
 // High and critical cards are listed together first; " " sorts before any real group name.
 static String groupOf(const Meta& m) { return m.prio >= 2 ? String(" Alerts") : m.menu; }
 
+static uint32_t srcVersion = 1;
+
 static void rebuildIndexLocked() {
+  srcVersion++;
   metas.clear();
   JsonDocument filter;
   filter["id"] = true; filter["title"] = true; filter["menu"] = true; filter["expires"] = true; filter["priority"] = true; filter["dwell"] = true; filter["widgets"][0]["src"] = true;
   filter["widgets"][0]["type"] = true;
+  filter["sources"] = true;
   filter["widgets"][0]["series"][0]["key"] = true;
   for (const String& id : store::listScreenIds()) {
     JsonDocument doc;
@@ -501,6 +532,10 @@ static void rebuildIndexLocked() {
       m.prio = p == "low" ? 0 : p == "high" ? 2 : p == "critical" ? 3 : 1;
     }
     m.mtime = store::mtime(store::screenPath(id));
+    for (JsonObject so : doc["sources"].as<JsonArray>()) {
+      SourceDef sd;
+      if ((int)m.sources.size() < sources::MAX_PER_CARD && sources::parse(id, so, sd)) m.sources.push_back(sd);
+    }
     for (JsonObject w : doc["widgets"].as<JsonArray>())
       if (w["src"].is<const char*>()) m.assets.push_back(String(w["src"].as<const char*>()));
     m.dwell = (uint8_t)constrain((int)(doc["dwell"] | 0), 0, 120);
@@ -675,6 +710,7 @@ void ui::loop() {
     rebuildIndexLocked();   // clear first: a PUT during the rebuild must stay flagged
     if (curId.isEmpty()) navigate("\x01");
   }
+  if (curAging && millis() - lastAgingRefresh > 2000) { lastAgingRefresh = millis(); updateAll(); }
   checkAlerts();
   slideshowTick();
   {
@@ -764,6 +800,7 @@ static bool mergeData(const String& id, JsonObjectConst d, MergeMode mode) {
     JsonVariantConst v = kv.value();
     bool have = sd.nums.count(k) || sd.blobs.count(k) || (sd.hist.count(k) && !sd.hist[k].empty());
     if (mode == SEED && have) continue;
+    if (mode != SEED) sd.seen[k] = millis();
     if (v.is<JsonArrayConst>() && v.size() && v[0].is<double>()) {   // numeric series = chart history
       if (isChartKey(k)) {
         auto& h = sd.hist[k];
@@ -984,4 +1021,35 @@ static void maintain() {
     }
   }
   if (changed) { indexDirty = true; net::screensChanged(); }
+}
+
+uint32_t ui::sourcesVersion() { return srcVersion; }
+
+std::vector<SourceDef> ui::sourceDefs() {
+  LvGuard g;
+  if (indexDirty) { indexDirty = false; rebuildIndexLocked(); }
+  std::vector<SourceDef> all;
+  for (const Meta& m : metas) all.insert(all.end(), m.sources.begin(), m.sources.end());
+  return all;
+}
+
+String ui::dataJson(const String& id) {
+  LvGuard g;
+  if (indexDirty) { indexDirty = false; rebuildIndexLocked(); }
+  bool known = false;
+  for (const Meta& m : metas) if (m.id == id) { known = true; break; }
+  if (!known) return "";
+  ScreenData& sd = loadData(id);
+  JsonDocument doc;
+  JsonObject vals = doc["values"].to<JsonObject>();
+  for (auto& kv : sd.nums) vals[kv.first] = kv.second;
+  for (auto& kv : sd.blobs) {
+    JsonDocument v;
+    if (!deserializeJson(v, kv.second)) vals[kv.first] = v;
+  }
+  JsonObject age = doc["age_s"].to<JsonObject>();
+  for (auto& kv : sd.seen) age[kv.first] = (uint32_t)((millis() - kv.second) / 1000);
+  String out;
+  serializeJson(doc, out);
+  return out;
 }

@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "test/t16-sources",
+  "title": "T16 display-side sources",
+  "menu": "Render tests",
+  "widgets": [
+    { "type": "label", "x": 8, "y": 6, "text": "web", "font": 16 },
+    { "type": "led", "x": 70, "y": 8, "key": "web_ok", "color": "#3fdc6c" },
+    { "type": "label", "x": 110, "y": 6, "text": "temp F", "font": 16 },
+    { "type": "value", "x": 190, "y": 4, "key": "temp", "fmt": "%.1f", "font": 24 },
+    { "type": "label", "x": 8, "y": 40, "text": "load", "font": 16 },
+    { "type": "bar", "x": 70, "y": 44, "w": 200, "h": 14, "key": "load", "min": 0, "max": 2, "color": "#4aa3ff" },
+    { "type": "table", "x": 8, "y": 74, "w": 300, "key": "workers", "cols": ["name", "state"], "rows": 6 }
+  ],
+  "sources": [
+    { "type": "mqtt", "topic": "cydtest/web/health", "path": "status", "key": "web_ok",
+      "map": { "ok": 1, "degraded": 0, "down": 0 }, "max_age": 6 },
+    { "type": "mqtt", "topic": "cydtest/node/env", "path": "temp_c", "key": "temp", "scale": 1.8, "offset": 32, "max_age": 6 },
+    { "type": "mqtt", "topic": "cydtest/node/load", "key": "load", "max_age": 6 },
+    { "type": "mqtt", "topic": "cydtest/worker/+/status", "path": "state", "table": "workers",
+      "row": { "name": "{2}", "state": "$" }, "max_age": 6 }
+  ]
+}

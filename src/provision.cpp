@@ -2,6 +2,7 @@
 #include "provision.h"
 #include "config.h"
 #include "hal.h"
+#include "net.h"
 #ifndef CYD_NO_BLE
 #include <NimBLEDevice.h>
 #endif
@@ -131,7 +132,7 @@ static void handlePacket(const std::string& p) {
       break;
     }
     case CMD_INFO:
-      sendResult(CMD_INFO, {"cyd-canvas", "0.1.0-dev", "ESP32", devName});
+      sendResult(CMD_INFO, {"cyd-canvas", CYD_VERSION, "ESP32", devName});
       break;
     case CMD_SCAN: scanJob = true; break;
     default: setError(ERR_UNKNOWN_CMD);

@@ -14,6 +14,8 @@ Last reviewed 2026-10-17. Developed and tested on **one** ESP32-2432S028R.
 | **Flash is 88% full, no over-the-air update yet** | About 228 KB headroom in the 1.9 MB slot. The second slot is reserved for OTA |
 | **Improv over USB serial is not implemented** | Bluetooth only; the serial `wifi <ssid> <password>` console command is the fallback |
 | **Only one board is verified** | Other CYD revisions may need different display or touch settings ([HARDWARE.md](HARDWARE.md#board-variants)) |
+| **General heap is small** | After boot about 52 KB is free and the largest block about 24 KB (it dips lower during heavy churn). TLS is unaffected (private pool), but very large JSON documents may not fit. `GET /api/status` shows `heap_free` and `heap_largest` |
+| **`http` sources are not implemented yet** | Only `mqtt` sources exist; see the [info hub design](design/info-hub.md) |
 | **The light sensor can read 0** | Normal in room light on the test board; not treated as a fault |
 
 ## Resolved (kept for the record)

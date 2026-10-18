@@ -2,7 +2,7 @@
 #pragma once
 #include <Arduino.h>
 
-#define CYD_VERSION "0.1.0-dev"
+#define CYD_VERSION "0.2.0-dev"
 
 namespace net {
 void begin();                 // starts the network task

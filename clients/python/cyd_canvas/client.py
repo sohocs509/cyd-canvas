@@ -235,6 +235,10 @@ class Canvas:
         if min_free_mb is not None: l["min_free_mb"] = min_free_mb
         return self.set_config(limits=l)
 
+    def get_data(self, sid: str) -> dict:
+        """Current readings of a card: {values: {...}, age_s: {key: seconds since last update}}."""
+        return self._call("GET", f"/api/data/{sid}")
+
     def ack(self, sid: str = "") -> dict:
         """Acknowledge a critical card (empty = all), releasing the display and the blinking LED."""
         return self._call("POST", f"/api/ack/{sid}" if sid else "/api/ack", b"")

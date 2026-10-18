@@ -289,6 +289,15 @@
           "expect": "(automatic test, see run.py) the card jumps onto the screen by itself, LED blinks red, backlight forced to full; ack returns to the menu."
         }
       ]
+    },
+    {
+      "id": "test/t16-sources",
+      "skip_auto": true,
+      "steps": [
+        {
+          "expect": "(automatic test, see run.py) values arrive from MQTT topics, are mapped and scaled, a table fills from a wildcard topic, and everything goes stale after max_age."
+        }
+      ]
     }
   ],
   "invalid": [

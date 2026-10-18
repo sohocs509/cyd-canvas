@@ -2,6 +2,8 @@
 #pragma once
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <vector>
+#include "sources.h"
 
 namespace ui {
 void begin();
@@ -22,6 +24,9 @@ bool clockValid();                              // true once NTP has set the tim
 bool parseUtc(const char* iso, int64_t& epoch); // "2026-10-20T18:00:00Z" only
 void replaceData(const String& id, JsonObjectConst data);  // embedded "data" of an uploaded screen
 String indexJson();
+String dataJson(const String& id);              // current readings of a card with their age; "" if no such card
+uint32_t sourcesVersion();                      // changes whenever the card index (and so the source list) changes
+std::vector<SourceDef> sourceDefs();     // every card's sources
 
 // Priority: "low" < "normal" < "high" < "critical". Critical cards take over the screen until acknowledged
 // (tap X / BOOT on the device, or POST /api/ack). High and critical cards are listed first, under "Alerts".

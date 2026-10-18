@@ -6,6 +6,7 @@
 #include "store.h"
 #include "provision.h"
 #include "tls.h"
+#include "sources.h"
 #include "tlsmem.h"
 #include "ui.h"
 #include <ESPmDNS.h>
@@ -441,6 +442,12 @@ static esp_err_t api(httpd_req_t* r) {
     if (m == HTTP_DELETE) return store::removeFile("/assets/" + id) ? reply(r, 200, "{\"ok\":true}") : err(r, 404, "no such asset");
   }
 
+  if (a == "data" && m == HTTP_GET) {
+    if (!store::validId(id)) return err(r, 400, "invalid screen id");
+    String j = ui::dataJson(id);
+    return j.isEmpty() ? err(r, 404, "no such screen") : reply(r, 200, j);
+  }
+
   if (a == "data" && m == HTTP_POST) {
     if (!store::validId(id)) return err(r, 400, "invalid screen id");
     String body;
@@ -501,6 +508,23 @@ static WiFiClientSecure secureClient;
 static PubSubClient mqtt;
 static uint32_t lastMqttTry = 0, lastState = 0;
 static String lastScreen = "?";
+static std::vector<SourceDef> srcDefs;        // card-declared MQTT sources (see sources.h)
+static std::vector<String> srcTopics;         // what we are subscribed to for them
+static uint32_t srcVersionSeen = 0, lastSrcTick = 0;
+
+// Subscribe to exactly the topics the current cards ask for (the card list changes at run time).
+static void syncSources() {
+  srcDefs = ui::sourceDefs();
+  std::vector<String> want;
+  for (const SourceDef& d : srcDefs) {
+    if (std::find(want.begin(), want.end(), d.topic) == want.end() && (int)want.size() < sources::MAX_TOPICS) want.push_back(d.topic);
+  }
+  for (const String& t : srcTopics)
+    if (std::find(want.begin(), want.end(), t) == want.end()) mqtt.unsubscribe(t.c_str());
+  for (const String& t : want) mqtt.subscribe(t.c_str());
+  srcTopics = want;
+  srcVersionSeen = ui::sourcesVersion();
+}
 
 static String pfx() { return cfg.mqPrefix; }
 
@@ -628,6 +652,8 @@ static void onMqtt(char* topic, uint8_t* payload, unsigned int len) {
     String id = t.substring(p.length() + 6);
     JsonDocument d;
     if (store::validId(id) && !deserializeJson(d, body) && d.is<JsonObject>()) ui::applyData(id, d.as<JsonObjectConst>());
+  } else {
+    sources::dispatch(srcDefs, t, body);          // a topic some card listens to
   }
 }
 
@@ -656,9 +682,13 @@ static void mqttService() {
     mqtt.subscribe((pfx() + "/cmd").c_str());
     mqtt.subscribe((pfx() + "/data/#").c_str());
     discoveryDirty = true;
+    srcTopics.clear();
+    srcVersionSeen = 0;                              // resubscribe the card sources after every (re)connect
     Serial.println("net: mqtt connected");
   }
   mqtt.loop();
+  if (srcVersionSeen != ui::sourcesVersion()) syncSources();
+  if (millis() - lastSrcTick > 5000) { lastSrcTick = millis(); sources::tick(srcDefs); }
   if (discoveryDirty && (int32_t)(millis() - discoveryAfter) >= 0) publishDiscovery();
   if (stateDirty || ui::current() != lastScreen || millis() - lastState > 30000) { stateDirty = false; publishState(); }
 }
@@ -717,18 +747,11 @@ static void netTask(void*) {
     wasUp = up;
     if (ntpChanged && up) { ntpChanged = false; configTime(0, 0, cfg.ntp.c_str(), "pool.ntp.org"); }
     {
-      static int lowCount = 0;
-      if (up && ESP.getMaxAllocHeap() < 36000) {
-        if (++lowCount > 3000) { Serial.println("net: heap too fragmented for TLS, restarting"); delay(100); ESP.restart(); }
-      } else {
-        lowCount = 0;
-      }
-    }
-    {
-      // diagnostics: report whenever the largest free block drops under what a TLS handshake needs
+      // diagnostics: report only when the general heap is genuinely low (TLS has its own pool and does not care
+      // about the largest block, so a small block here is normal)
       static uint32_t lastLog = 0;
       size_t big = ESP.getMaxAllocHeap();
-      if (big < 36000 && millis() - lastLog > 500) {
+      if (big < 12000 && millis() - lastLog > 5000) {
         lastLog = millis();
         Serial.printf("heap: LOW largest=%u free=%u minfree=%u\n", (unsigned)big, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
       }

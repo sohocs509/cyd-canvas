@@ -52,6 +52,8 @@ from cyd_canvas import mqtt_publish
 mqtt_publish("broker", "cyd/cyd-ab0694/data/hosts/milo/health", {"cpu": 42, "mem": 61})
 ```
 
+A card can also **subscribe by itself** to any topic with `sources`: see [SCREEN-FORMAT.md](SCREEN-FORMAT.md#sources-the-display-fetches-its-own-data).
+
 Arrays of numbers set chart history; arrays of objects fill tables. See [SCREEN-FORMAT.md](SCREEN-FORMAT.md).
 Cards themselves (layouts) are uploaded over HTTPS, not MQTT.
 

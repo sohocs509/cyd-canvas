@@ -12,6 +12,7 @@ import argparse
 import calendar
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -155,6 +156,10 @@ def alert_test(c: Canvas):
 def slideshow_test(c: Canvas):
     print("Slideshow")
     ids = ["test/ss/a", "test/ss/b", "test/ss/c"]
+    orig = c.config()["slideshow"]                 # the owner may have it switched on: restore it at the end
+    c.slideshow(False)
+    c.menu()
+    time.sleep(1.5)
     for i in ids:
         c.put_screen(tiny(i, i[-1].upper(), dwell=3))
     st, _ = raw(c, "PUT", "/api/screens/test/ss/bad", json.dumps(tiny("test/ss/bad", dwell=500)).encode())
@@ -183,6 +188,7 @@ def slideshow_test(c: Canvas):
     check("stays put once switched off", now == {c.status()["current"]} == {""}, str(now))
     for i in ids:
         c.delete_screen(i)
+    c.slideshow(orig["enabled"], idle=orig["idle"], dwell=orig["dwell"], prefix=orig["prefix"])
 
 
 def maintenance_test(c: Canvas):
@@ -207,6 +213,48 @@ def maintenance_test(c: Canvas):
     for cid in ("test/mt/c", "test/mt/e"):
         try: c.delete_screen(cid)
         except CanvasError: pass
+
+
+def sources_test(c: Canvas):
+    print("Display-side sources (MQTT)")
+    mq = c.config().get("mqtt", {})
+    if not mq.get("host"):
+        print("  [SKIP] the display has no MQTT broker configured")
+        return
+    from cyd_canvas import mqtt_publish
+    user, pw = os.environ.get("CYD_TEST_MQTT_USER"), os.environ.get("CYD_TEST_MQTT_PASSWORD")
+
+    def pub(topic, payload):
+        mqtt_publish(mq["host"], topic, payload, port=mq.get("port", 1883), username=user, password=pw)
+
+    cid = "test/t16-sources"
+    c.put_screen(HERE / "screens" / "t16-sources.json")
+    time.sleep(3)                                   # index rebuild, then the subscriptions
+    pub("cydtest/web/health", {"status": "ok", "ignored": 1})
+    pub("cydtest/node/env", {"temp_c": 20, "other": {"x": 1}})
+    pub("cydtest/node/load", "0.75")
+    pub("cydtest/worker/alpha/status", {"state": "idle"})
+    pub("cydtest/worker/beta/status", {"state": "busy"})
+    time.sleep(2)
+    d = c.get_data(cid)
+    v, age = d["values"], d["age_s"]
+    check("mapped string becomes a number (ok -> 1)", v.get("web_ok") == 1, str(v.get("web_ok")))
+    check("scale and offset applied (20 C -> 68 F)", abs(v.get("temp", 0) - 68) < 0.01, str(v.get("temp")))
+    check("plain-text payload used as the value", abs(v.get("load", 0) - 0.75) < 0.001, str(v.get("load")))
+    rows = sorted((r["name"], r["state"]) for r in v.get("workers", []))
+    check("table built from a wildcard topic ({2} = topic level)", rows == [("alpha", "idle"), ("beta", "busy")], str(rows))
+    check("values are fresh", all(age.get(k, 99) < 5 for k in ("web_ok", "temp", "load")), str(age))
+    pub("cydtest/web/health", {"status": "degraded"})
+    pub("cydtest/worker/alpha/status", {"state": "down"})
+    time.sleep(1.5)
+    v = c.get_data(cid)["values"]
+    check("a later message updates the value (degraded -> 0)", v.get("web_ok") == 0, str(v.get("web_ok")))
+    check("a later message updates its table row", ("alpha", "down") in [(r["name"], r["state"]) for r in v["workers"]])
+    time.sleep(12)                                  # max_age is 6 s
+    d = c.get_data(cid)
+    check("values report their age (stale after max_age)", all(d["age_s"].get(k, 0) >= 6 for k in ("web_ok", "temp", "load")), str(d["age_s"]))
+    check("stale table rows are dropped", d["values"].get("workers") == [], str(d["values"].get("workers")))
+    c.delete_screen(cid)
 
 
 def expiry_test(c: Canvas, man):
@@ -281,6 +329,7 @@ def main():
     alert_test(c)
     slideshow_test(c)
     maintenance_test(c)
+    sources_test(c)
     import tempfile
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)

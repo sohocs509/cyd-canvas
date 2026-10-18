@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "lab/status",
+  "title": "Lab status",
+  "menu": "Lab",
+  "widgets": [
+    { "type": "label", "x": 8, "y": 8, "text": "Web", "font": 16 },
+    { "type": "led", "x": 70, "y": 10, "key": "web_ok", "color": "#3fdc6c" },
+    { "type": "label", "x": 8, "y": 40, "text": "Load", "font": 16 },
+    { "type": "bar", "x": 70, "y": 44, "w": 200, "h": 14, "key": "load", "min": 0, "max": 4, "color": "#4aa3ff" },
+    { "type": "value", "x": 8, "y": 70, "key": "temp", "fmt": "%.0f", "unit": " F", "font": 32 },
+    { "type": "table", "x": 8, "y": 120, "w": 300, "key": "services", "cols": ["name", "state"], "rows": 4 }
+  ],
+  "sources": [
+    { "type": "mqtt", "topic": "lab/web/health", "path": "status", "key": "web_ok",
+      "map": { "ok": 1, "degraded": 0, "down": 0 }, "max_age": 300 },
+    { "type": "mqtt", "topic": "lab/node/load", "path": "load1", "key": "load", "max_age": 120 },
+    { "type": "mqtt", "topic": "lab/room/temperature", "path": "celsius", "key": "temp", "scale": 1.8, "offset": 32, "max_age": 600 },
+    { "type": "mqtt", "topic": "lab/service/+/state", "path": "state", "table": "services",
+      "row": { "name": "{2}", "state": "$" }, "max_age": 300 }
+  ]
+}

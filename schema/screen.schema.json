@@ -4,106 +4,481 @@
   "title": "cyd-canvas screen",
   "description": "A screen definition stored on the device's SD card at /screens/<id>.json.",
   "type": "object",
-  "required": ["schema", "id", "widgets"],
+  "required": [
+    "schema",
+    "id",
+    "widgets"
+  ],
   "additionalProperties": false,
   "properties": {
-    "schema": { "const": 1, "description": "Screen format version." },
-    "id": { "type": "string", "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9_-]{0,31}(/[a-z0-9][a-z0-9_-]{0,31}){0,3}$", "description": "Unique path-style id, e.g. hosts/milo/health. Uploading the same id replaces the older card." },
-    "expires": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", "description": "UTC time after which the device deletes the card (needs a synced clock)." },
-    "data": { "type": "object", "description": "Initial readings, same shape as a data message; arrays of numbers seed chart history." },
-    "title": { "type": "string", "maxLength": 32 },
-    "dwell": { "type": "integer", "minimum": 2, "maximum": 120, "description": "Seconds this card stays up during the slideshow (default: the slideshow setting)." },
-    "priority": { "enum": ["low", "normal", "high", "critical"], "default": "normal", "description": "high and critical cards are listed first under Alerts. A critical card takes over the display (and blinks the LED) until acknowledged." },
-    "menu": { "type": "string", "maxLength": 24, "description": "Menu group this screen appears under." },
-    "bg": { "$ref": "#/$defs/color" },
-    "widgets": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/widget" } },
+    "schema": {
+      "const": 1,
+      "description": "Screen format version."
+    },
+    "id": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,31}(/[a-z0-9][a-z0-9_-]{0,31}){0,3}$",
+      "description": "Unique path-style id, e.g. hosts/milo/health. Uploading the same id replaces the older card."
+    },
+    "expires": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "UTC time after which the device deletes the card (needs a synced clock)."
+    },
+    "data": {
+      "type": "object",
+      "description": "Initial readings, same shape as a data message; arrays of numbers seed chart history."
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 32
+    },
+    "dwell": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 120,
+      "description": "Seconds this card stays up during the slideshow (default: the slideshow setting)."
+    },
+    "priority": {
+      "enum": [
+        "low",
+        "normal",
+        "high",
+        "critical"
+      ],
+      "default": "normal",
+      "description": "high and critical cards are listed first under Alerts. A critical card takes over the display (and blinks the LED) until acknowledged."
+    },
+    "menu": {
+      "type": "string",
+      "maxLength": 24,
+      "description": "Menu group this screen appears under."
+    },
+    "bg": {
+      "$ref": "#/$defs/color"
+    },
+    "widgets": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/widget"
+      }
+    },
     "thresholds": {
       "type": "object",
       "description": "Per data key: ascending [value, color] pairs; the last pair whose value <= the reading wins.",
       "additionalProperties": {
         "type": "array",
-        "items": { "type": "array", "prefixItems": [{ "type": "number" }, { "$ref": "#/$defs/color" }], "minItems": 2, "maxItems": 2 }
+        "items": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/$defs/color"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        }
       }
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/source"
+      },
+      "description": "Where this card's values come from, fetched by the display itself (see docs/design/info-hub.md)."
     }
   },
   "$defs": {
-    "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
-    "key": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,32}$" },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,32}$"
+    },
     "base": {
       "type": "object",
-      "required": ["type", "x", "y"],
+      "required": [
+        "type",
+        "x",
+        "y"
+      ],
       "properties": {
-        "type": { "type": "string" },
-        "x": { "type": "integer", "minimum": 0, "maximum": 319 },
-        "y": { "type": "integer", "minimum": 0, "maximum": 319 },
-        "w": { "type": "integer", "minimum": 1, "maximum": 320 },
-        "h": { "type": "integer", "minimum": 1, "maximum": 320 },
-        "color": { "$ref": "#/$defs/color" }
+        "type": {
+          "type": "string"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 319
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 319
+        },
+        "w": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 320
+        },
+        "h": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 320
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        }
       }
     },
     "widget": {
       "oneOf": [
-        { "$ref": "#/$defs/label" }, { "$ref": "#/$defs/value" }, { "$ref": "#/$defs/bar" },
-        { "$ref": "#/$defs/arc" }, { "$ref": "#/$defs/chart" }, { "$ref": "#/$defs/table" },
-        { "$ref": "#/$defs/image" }, { "$ref": "#/$defs/led" }
+        {
+          "$ref": "#/$defs/label"
+        },
+        {
+          "$ref": "#/$defs/value"
+        },
+        {
+          "$ref": "#/$defs/bar"
+        },
+        {
+          "$ref": "#/$defs/arc"
+        },
+        {
+          "$ref": "#/$defs/chart"
+        },
+        {
+          "$ref": "#/$defs/table"
+        },
+        {
+          "$ref": "#/$defs/image"
+        },
+        {
+          "$ref": "#/$defs/led"
+        }
       ]
     },
     "label": {
-      "allOf": [{ "$ref": "#/$defs/base" }],
-      "properties": { "type": { "const": "label" }, "text": { "type": "string", "maxLength": 128 }, "font": { "enum": [12, 16, 24, 32] } },
-      "required": ["text"]
-    },
-    "value": {
-      "allOf": [{ "$ref": "#/$defs/base" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
       "properties": {
-        "type": { "const": "value" }, "key": { "$ref": "#/$defs/key" },
-        "fmt": { "type": "string", "maxLength": 15, "pattern": "^[^%]*(%%[^%]*)*%[-+ 0#]*[0-9]{0,2}(\\.[0-9]{0,2})?[feEgG]([^%]*(%%[^%]*)*)$", "description": "printf-style with exactly one f/e/g conversion, e.g. %.1f. Anything else is replaced by %.1f on the device." },
-        "unit": { "type": "string", "maxLength": 8 }, "font": { "enum": [12, 16, 24, 32] }
-      },
-      "required": ["key"]
-    },
-    "bar": {
-      "allOf": [{ "$ref": "#/$defs/base" }],
-      "properties": { "type": { "const": "bar" }, "key": { "$ref": "#/$defs/key" }, "min": { "type": "number" }, "max": { "type": "number" } },
-      "required": ["key", "w", "h"]
-    },
-    "arc": {
-      "allOf": [{ "$ref": "#/$defs/base" }],
-      "properties": { "type": { "const": "arc" }, "key": { "$ref": "#/$defs/key" }, "min": { "type": "number" }, "max": { "type": "number" } },
-      "required": ["key", "w", "h"]
-    },
-    "chart": {
-      "allOf": [{ "$ref": "#/$defs/base" }],
-      "properties": {
-        "type": { "const": "chart" }, "points": { "type": "integer", "minimum": 2, "maximum": 240 },
-        "min": { "type": "number" }, "max": { "type": "number" },
-        "style": { "enum": ["line", "bar"] },
-        "series": {
-          "type": "array", "minItems": 1, "maxItems": 4,
-          "items": { "type": "object", "required": ["key"], "additionalProperties": false,
-                     "properties": { "key": { "$ref": "#/$defs/key" }, "color": { "$ref": "#/$defs/color" } } }
+        "type": {
+          "const": "label"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "font": {
+          "enum": [
+            12,
+            16,
+            24,
+            32
+          ]
         }
       },
-      "required": ["w", "h", "series"]
+      "required": [
+        "text"
+      ]
+    },
+    "value": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "properties": {
+        "type": {
+          "const": "value"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "fmt": {
+          "type": "string",
+          "maxLength": 15,
+          "pattern": "^[^%]*(%%[^%]*)*%[-+ 0#]*[0-9]{0,2}(\\.[0-9]{0,2})?[feEgG]([^%]*(%%[^%]*)*)$",
+          "description": "printf-style with exactly one f/e/g conversion, e.g. %.1f. Anything else is replaced by %.1f on the device."
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 8
+        },
+        "font": {
+          "enum": [
+            12,
+            16,
+            24,
+            32
+          ]
+        }
+      },
+      "required": [
+        "key"
+      ]
+    },
+    "bar": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "properties": {
+        "type": {
+          "const": "bar"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "key",
+        "w",
+        "h"
+      ]
+    },
+    "arc": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "properties": {
+        "type": {
+          "const": "arc"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "key",
+        "w",
+        "h"
+      ]
+    },
+    "chart": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "properties": {
+        "type": {
+          "const": "chart"
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 240
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "style": {
+          "enum": [
+            "line",
+            "bar"
+          ]
+        },
+        "series": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": [
+              "key"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "$ref": "#/$defs/key"
+              },
+              "color": {
+                "$ref": "#/$defs/color"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "w",
+        "h",
+        "series"
+      ]
     },
     "table": {
-      "allOf": [{ "$ref": "#/$defs/base" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
       "properties": {
-        "type": { "const": "table" }, "key": { "$ref": "#/$defs/key" },
-        "cols": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 4 },
-        "rows": { "type": "integer", "minimum": 1, "maximum": 12 }
+        "type": {
+          "const": "table"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "cols": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 4
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        }
       },
-      "required": ["key", "cols", "w"]
+      "required": [
+        "key",
+        "cols",
+        "w"
+      ]
     },
     "image": {
-      "allOf": [{ "$ref": "#/$defs/base" }],
-      "properties": { "type": { "const": "image" }, "src": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,32}\\.bin$", "description": "LVGL binary image in /assets/" } },
-      "required": ["src"]
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "properties": {
+        "type": {
+          "const": "image"
+        },
+        "src": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,32}\\.bin$",
+          "description": "LVGL binary image in /assets/"
+        }
+      },
+      "required": [
+        "src"
+      ]
     },
     "led": {
-      "allOf": [{ "$ref": "#/$defs/base" }],
-      "properties": { "type": { "const": "led" }, "key": { "$ref": "#/$defs/key" } },
-      "required": ["key"]
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        }
+      ],
+      "properties": {
+        "type": {
+          "const": "led"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        }
+      },
+      "required": [
+        "key"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "type",
+        "topic"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "mqtt"
+        },
+        "topic": {
+          "type": "string",
+          "maxLength": 96,
+          "description": "MQTT topic filter; + and # allowed."
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "a.b[0].c into a JSON payload; omit for a plain-value payload."
+        },
+        "key": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Data key to set. {n} = n-th level of the actual topic (0-based)."
+        },
+        "table": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Fill a table instead: one row per matching topic."
+        },
+        "row": {
+          "type": "object",
+          "maxProperties": 4,
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Column name -> expression ({n} = topic level, $ = value)."
+        },
+        "map": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "String value -> number, e.g. {\"ok\": 1, \"down\": 0}."
+        },
+        "scale": {
+          "type": "number"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "max_age": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400,
+          "description": "Seconds before the value is shown as stale."
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "key"
+          ]
+        },
+        {
+          "required": [
+            "table",
+            "row"
+          ]
+        }
+      ]
     }
   }
 }
