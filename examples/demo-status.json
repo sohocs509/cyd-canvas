@@ -1,0 +1,127 @@
+{
+ "schema": 1,
+ "id": "demo/status",
+ "title": "Lab status",
+ "menu": "Demo",
+ "priority": "low",
+ "widgets": [
+  {
+   "type": "label",
+   "x": 8,
+   "y": 8,
+   "text": "Web",
+   "font": 16
+  },
+  {
+   "type": "led",
+   "x": 60,
+   "y": 10,
+   "key": "web",
+   "color": "#3fdc6c"
+  },
+  {
+   "type": "label",
+   "x": 104,
+   "y": 8,
+   "text": "DB",
+   "font": 16
+  },
+  {
+   "type": "led",
+   "x": 140,
+   "y": 10,
+   "key": "db",
+   "color": "#3fdc6c"
+  },
+  {
+   "type": "label",
+   "x": 176,
+   "y": 8,
+   "text": "Backup",
+   "font": 16
+  },
+  {
+   "type": "led",
+   "x": 252,
+   "y": 10,
+   "key": "bk",
+   "color": "#ffc400"
+  },
+  {
+   "type": "label",
+   "x": 8,
+   "y": 44,
+   "text": "Load",
+   "font": 16
+  },
+  {
+   "type": "bar",
+   "x": 84,
+   "y": 48,
+   "w": 220,
+   "h": 14,
+   "key": "load",
+   "min": 0,
+   "max": 4,
+   "color": "#4aa3ff"
+  },
+  {
+   "type": "label",
+   "x": 8,
+   "y": 74,
+   "text": "Room",
+   "font": 16
+  },
+  {
+   "type": "value",
+   "x": 84,
+   "y": 68,
+   "key": "temp",
+   "fmt": "%.0f",
+   "unit": " F",
+   "font": 24
+  },
+  {
+   "type": "table",
+   "x": 8,
+   "y": 104,
+   "w": 304,
+   "key": "services",
+   "cols": [
+    "name",
+    "state",
+    "up"
+   ],
+   "rows": 4
+  }
+ ],
+ "data": {
+  "web": 1,
+  "db": 1,
+  "bk": 1,
+  "load": 1.7,
+  "temp": 71,
+  "services": [
+   {
+    "name": "caddy",
+    "state": "ok",
+    "up": "41d"
+   },
+   {
+    "name": "postgres",
+    "state": "ok",
+    "up": "41d"
+   },
+   {
+    "name": "mqtt",
+    "state": "ok",
+    "up": "12d"
+   },
+   {
+    "name": "backup",
+    "state": "late",
+    "up": "1d"
+   }
+  ]
+ }
+}

@@ -1,0 +1,94 @@
+{
+ "schema": 1,
+ "id": "demo/gauges",
+ "title": "Gauges",
+ "menu": "Demo",
+ "priority": "low",
+ "widgets": [
+  {
+   "type": "arc",
+   "x": 6,
+   "y": 20,
+   "w": 98,
+   "h": 98,
+   "key": "a",
+   "min": 0,
+   "max": 100
+  },
+  {
+   "type": "arc",
+   "x": 111,
+   "y": 20,
+   "w": 98,
+   "h": 98,
+   "key": "b",
+   "min": 0,
+   "max": 100
+  },
+  {
+   "type": "arc",
+   "x": 216,
+   "y": 50,
+   "w": 98,
+   "h": 98,
+   "key": "c",
+   "min": 0,
+   "max": 100
+  },
+  {
+   "type": "label",
+   "x": 26,
+   "y": 122,
+   "text": "Battery",
+   "font": 16
+  },
+  {
+   "type": "label",
+   "x": 138,
+   "y": 122,
+   "text": "Wi-Fi",
+   "font": 16
+  },
+  {
+   "type": "label",
+   "x": 236,
+   "y": 152,
+   "text": "Humidity",
+   "font": 16
+  },
+  {
+   "type": "bar",
+   "x": 8,
+   "y": 172,
+   "w": 300,
+   "h": 16,
+   "key": "solar",
+   "min": 0,
+   "max": 100,
+   "color": "#ffc400"
+  },
+  {
+   "type": "label",
+   "x": 8,
+   "y": 196,
+   "text": "Solar output",
+   "font": 16
+  },
+  {
+   "type": "value",
+   "x": 200,
+   "y": 192,
+   "key": "kw",
+   "fmt": "%.1f",
+   "unit": " kW",
+   "font": 24
+  }
+ ],
+ "data": {
+  "a": 82,
+  "b": 74,
+  "c": 48,
+  "solar": 57,
+  "kw": 3.4
+ }
+}

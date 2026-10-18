@@ -1,0 +1,68 @@
+{
+ "schema": 1,
+ "id": "demo/week",
+ "title": "This week",
+ "menu": "Demo",
+ "priority": "low",
+ "widgets": [
+  {
+   "type": "label",
+   "x": 8,
+   "y": 6,
+   "text": "Requests per day",
+   "font": 16
+  },
+  {
+   "type": "chart",
+   "x": 8,
+   "y": 32,
+   "w": 304,
+   "h": 150,
+   "points": 14,
+   "min": 0,
+   "max": 100,
+   "style": "bar",
+   "series": [
+    {
+     "key": "req",
+     "color": "#4aa3ff"
+    }
+   ]
+  },
+  {
+   "type": "label",
+   "x": 8,
+   "y": 196,
+   "text": "Today",
+   "font": 16
+  },
+  {
+   "type": "value",
+   "x": 90,
+   "y": 190,
+   "key": "today",
+   "fmt": "%.0f",
+   "unit": "k",
+   "font": 32
+  }
+ ],
+ "data": {
+  "req": [
+   42,
+   55,
+   48,
+   61,
+   70,
+   66,
+   58,
+   49,
+   63,
+   72,
+   80,
+   76,
+   68,
+   74
+  ],
+  "today": 74
+ }
+}
