@@ -5,12 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install cyd-canvas</title>
 <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
-<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style>
+<style>.warn{border:2px solid #b45309;background:#fffbeb;color:#451a03;padding:.75rem 1rem;border-radius:.5rem}body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style>
 </head>
 <body>
 <h1>Install cyd-canvas</h1>
 <p>For the ESP32-2432S028R ("Cheap Yellow Display"). Plug it in by USB and use Chrome or Edge.
 This writes the firmware to the board; it does not touch the SD card.</p>
+<p class="warn"><strong>Untested pre-release.</strong> This build and this installer have not been run on hardware as a
+release. Installing writes the whole flash and <strong>erases the Wi-Fi, API key and pairing stored on the board</strong>.
+Use it on a spare board, or update with PlatformIO instead.</p>
 <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
 <p>After flashing, set up Wi-Fi from <a href="setup.html">the Bluetooth setup page</a>.
 Firmware is Apache-2.0 with LGPL components; see THIRD-PARTY.md in the

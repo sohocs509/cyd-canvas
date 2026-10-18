@@ -5,6 +5,8 @@ versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0-alpha.1] - 2026-10-18 (untested pre-release)
+
 ### Added
 - Repository scaffold, screen JSON Schema v1, verified ESP32-2432S028R pin map.
 - Path-style card ids (`hosts/milo/health`); re-uploading an id replaces the older card.

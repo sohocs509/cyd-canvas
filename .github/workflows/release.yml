@@ -36,7 +36,8 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file RELEASE-NOTES.md
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file RELEASE-NOTES.md \
+              $(case "$GITHUB_REF_NAME" in *-*) echo --prerelease;; esac)
           gh release upload "$GITHUB_REF_NAME" cyd-canvas-merged.bin cyd-canvas-app.bin SHA256SUMS --clobber
       - name: Assemble the web flasher
         run: |
