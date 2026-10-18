@@ -4,6 +4,13 @@ Turn a **$15 ESP32 "Cheap Yellow Display"** into a networked status screen. Send
 and it draws a dashboard: numbers, gauges, bars, charts, tables, status lights and images. Layouts ("cards") and
 images live on the display's microSD card, so they survive reboots and change over the network without reflashing.
 
+<p align="center">
+  <img src="docs/images/health.jpg" width="32%" alt="Host health card: two values, a disk gauge and a line chart">
+  <img src="docs/images/gauges.jpg" width="32%" alt="Gauges card: three arcs, a bar and a value">
+  <img src="docs/images/week.jpg" width="32%" alt="Bar chart card of requests per day">
+</p>
+<p align="center"><sub>Real photos of an ESP32-2432S028R running the <a href="examples/README.md">demo cards</a> (sample data).</sub></p>
+
 - **Cards as JSON**, described by a [JSON Schema](schema/screen.schema.json) and a plain-language
   [format guide](docs/SCREEN-FORMAT.md).
 - **Live data over HTTPS or MQTT.** A card defines *where* things go; data says *what the values are*.
